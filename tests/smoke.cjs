@@ -47,7 +47,8 @@ function setup(hash = '') {
     createElement: (tag) => new Elem(tag),
     createTextNode: (str) => ({ textContent: String(str) }),
     querySelectorAll: () => [],
-    querySelector: () => null
+    querySelector: () => null,
+    addEventListener() {}
   };
   const location = { href: 'https://example.com/relay/' + hash, hash, pathname: '/relay/', search: '' };
   const context = vm.createContext({

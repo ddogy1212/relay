@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f8f7f3">
+  <meta name="description" content="한 문장으로 시작해 함께 완성하는 이야기. 릴레이 소설에 특화된 나만의 집필 공간, relay.">
+  <title>relay. — 이야기를 잇는 공간</title>
+  <link rel="icon" type="image/svg+xml" href="./icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <button class="brand" type="button" id="homeButton" aria-label="릴레이 홈">
+        <span class="brand-mark" aria-hidden="true">↗</span><span>relay<span class="brand-dot">.</span></span>
+      </button>
+      <nav class="topnav" aria-label="주 메뉴">
+        <button type="button" class="nav-link active" id="libraryNav">내 서재</button>
+        <button type="button" class="nav-link" id="guideNav">이용 가이드</button>
+      </nav>
+      <div class="header-actions">
+        <button type="button" class="name-pill" id="nameButton" title="작가 이름 바꾸기"><span class="name-avatar" id="nameAvatar">나</span><span id="nameBadge">작가 이름</span><span class="tiny-caret">⌄</span></button>
+        <button type="button" class="btn btn-dark top-create" id="topCreate"><span class="plus-sign">＋</span> 새 소설</button>
+      </div>
+    </header>
+
+    <main id="libraryView">
+      <section class="hero">
+        <div class="hero-words">
+          <span class="eyebrow"><span class="eyebrow-star">✳</span> A LITTLE STORY, TOGETHER</span>
+          <h1>우리의 이야기는<br><em>다음 사람의 문장</em>에서<br>계속된다<span class="heading-dot">.</span></h1>
+          <p class="hero-sub">한 사람의 시작, 다른 사람의 상상. 글을 잇고, 차례를 넘기고, 함께 하나의 세계를 완성해 보세요.</p>
+          <div class="hero-actions">
+            <button type="button" class="btn btn-primary btn-large" id="heroCreate">첫 이야기 시작하기 <span aria-hidden="true">↗</span></button>
+            <button type="button" class="text-button" id="heroGuide">어떻게 쓰나요? <span aria-hidden="true">→</span></button>
+          </div>
+          <div class="hero-foot"><span class="sparkle">✦</span> 내 브라우저에 자동 저장 · 원고를 링크로 전달</div>
+        </div>
+        <div class="hero-art" aria-label="이어지는 이야기 일러스트" role="img">
+          <div class="orbit orbit-1"></div><div class="orbit orbit-2"></div>
+          <div class="book book-back"><span>THE NEXT<br>CHAPTER</span><span class="book-bottom">03 / ∞</span></div>
+          <div class="book book-front"><div class="book-topline">RELAY / VOL. 01</div><div class="book-flower">✳</div><div class="book-title">Every story<br>starts with<br><i>someone.</i></div><div class="book-bottom">WRITE THE NEXT PAGE →</div></div>
+          <span class="floating-note note-one">“그런데 그때…”</span>
+          <span class="floating-note note-two">chapter 02 ✎</span>
+          <span class="art-spark art-spark-1">✳</span><span class="art-spark art-spark-2">✦</span>
+        </div>
+      </section>
+
+      <section class="mini-stats" aria-label="내 서재 통계">
+        <div><span class="stat-icon peach">▣</span><div><span class="stat-number" id="statStories">0</span><span class="stat-label">함께 만드는 작품</span></div></div>
+        <div><span class="stat-icon lilac">✎</span><div><span class="stat-number" id="statChapters">0</span><span class="stat-label">이어진 장면</span></div></div>
+        <div><span class="stat-icon green">⌁</span><div><span class="stat-number" id="statCharacters">0</span><span class="stat-label">쌓인 글자</span></div></div>
+      </section>
+
+      <section class="library-section">
+        <div class="section-top"><div><span class="section-overline">YOUR BOOKSHELF</span><h2>내 이야기 서재 <span class="section-count" id="libraryCount">0</span></h2><p>멈춘 이야기에는 언제든 다음 장을 써 내려갈 수 있어요.</p></div><div class="section-tools"><label class="search-wrap"><span aria-hidden="true">⌕</span><input id="storySearch" type="search" placeholder="작품 검색" aria-label="작품 검색"></label><button id="importTop" type="button" class="btn btn-outline">백업 불러오기</button></div></div>
+        <div id="storyGrid" class="story-grid"></div>
+        <div class="empty-state" id="emptyState">
+          <div class="empty-art"><span>✎</span><span>✦</span></div>
+          <h3>아직 첫 장이 비어 있어요.</h3>
+          <p>작품을 만들고 친구에게 다음 장을 넘겨 보세요.<br>어쩌면 생각하지 못한 결말을 만나게 될지도!</p>
+          <div class="empty-buttons"><button type="button" class="btn btn-primary" id="emptyCreate">새 이야기 만들기 ↗</button><button type="button" class="btn btn-ghost" id="demoCreate">예시 작품 체험하기</button></div>
+        </div>
+      </section>
+      <section class="how-strip">
+        <span class="how-label">HOW IT WORKS</span>
+        <div class="how-item"><strong>01</strong><span>이야기와 차례 만들기</span></div><div class="how-arrow">→</div>
+        <div class="how-item"><strong>02</strong><span>한 장면 이어 쓰기</span></div><div class="how-arrow">→</div>
+        <div class="how-item"><strong>03</strong><span>다음 작가에게 넘기기</span></div>
+      </section>
+    </main>
+
+    <main id="studioView" class="studio-view hidden">
+      <div class="studio-breadcrumb"><button type="button" class="link-back" id="backToLibrary">← 내 서재</button><span>/</span><span id="crumbTitle">작품 이름</span></div>
+      <section class="studio-heading">
+        <div class="studio-cover" id="studioCover">🌙</div>
+        <div class="studio-title-block"><div class="studio-label"><span class="dot-live"></span> RELAY WRITING ROOM <span class="status-chip" id="storyStatus">집필 중</span></div><h1 id="studioTitle">이야기 제목</h1><p id="studioPremise">이야기 한 줄 소개</p><div class="studio-metadata"><span id="studioGenre">장르</span><span>·</span><span id="studioSceneCount">0개의 장면</span><span>·</span><span id="studioLastDate">방금 시작</span></div></div>
+        <div class="studio-head-actions"><button type="button" class="btn btn-outline" id="readButton">▤ 독서 모드</button><button type="button" class="btn btn-primary" id="shareButton">이야기 넘기기 ↗</button></div>
+      </section>
+      <div class="studio-layout">
+        <aside class="timeline-panel">
+          <div class="panel-heading"><div><span class="panel-eyebrow">THE STORY SO FAR</span><h2>이야기의 흐름</h2></div><span id="timelineTotal" class="count-round">0</span></div>
+          <div class="timeline-list" id="timelineList"></div>
+          <div class="panel-bottom"><button type="button" id="readAllButton" class="plain-link">처음부터 이어 읽기 <span>↗</span></button></div>
+        </aside>
+        <section class="writing-panel">
+          <div class="next-up"><span class="next-icon">✳</span><div><span class="mini-caption">NEXT WRITER</span><strong id="nextWriter">다음 작가</strong></div><span id="turnNumber" class="round-chip">01번째 장면</span></div>
+          <div id="contextBlock" class="context-block"><span class="context-label">PREVIOUSLY ON RELAY</span><blockquote id="contextText">첫 문장은 무엇이 될까요? 새로운 세계의 문을 열어 주세요.</blockquote><div class="context-author" id="contextAuthor">아직 작성된 장면이 없어요.</div></div>
+          <div class="editor-toolbar"><div><span class="panel-eyebrow">YOUR TURN TO WRITE</span><h2>다음 장면을 써 주세요 <span class="pen-emoji">✎</span></h2></div><span id="draftStatus" class="autosave-status">● 자동 저장</span></div>
+          <div class="writer-row"><label for="writerInput">이번 장면의 작가</label><input id="writerInput" type="text" maxlength="24" placeholder="작가 이름"></div>
+          <label class="sr-only" for="sceneText">다음 장면 원고</label>
+          <textarea id="sceneText" class="scene-textarea" placeholder="이야기는 이렇게 시작되었다..." maxlength="1200" spellcheck="true"></textarea>
+          <div class="editor-meta"><span id="charCounter"><strong>0</strong> / 800자</span><span id="limitHint">최소 20자부터 등록할 수 있어요</span></div>
+          <div class="char-progress"><div id="charProgressBar"></div></div>
+          <div class="editor-bottom"><div class="prompt-box"><span class="prompt-spark">✧</span><span id="promptText">막혔다면 새로운 변수를 등장시켜 보세요.</span><button type="button" id="newPrompt" aria-label="새로운 영감 보기" title="새로운 아이디어">↻</button></div><button type="button" class="btn btn-primary btn-publish" id="publishScene">이번 장면 등록하기 <span>↗</span></button></div>
+          <div id="completedMessage" class="completed-message hidden"><span>✦</span><h3>이 이야기는 완결되었어요.</h3><p>함께 만든 이야기를 독서 모드에서 다시 읽어 보세요.</p></div>
+        </section>
+        <aside class="details-panel">
+          <div class="detail-card"><span class="panel-eyebrow">STORY SETTINGS</span><h3>이야기의 약속</h3><div class="detail-line"><span>장르</span><strong id="detailGenre">-</strong></div><div class="detail-line"><span>한 장면</span><strong id="detailLimit">최대 800자</strong></div><div class="detail-line"><span>진행 방식</span><strong id="detailMode">자유 릴레이</strong></div><div class="detail-hr"></div><div class="detail-small-title">작가 순서</div><div id="authorOrder" class="author-list"></div></div>
+          <div class="detail-card tip-card"><span class="tip-sun">✳</span><h3>좋은 릴레이의 비밀</h3><p>앞사람의 설정을 존중하되, 다음 사람이 상상할 수 있는 작은 여지를 남겨 주세요.</p></div>
+          <div class="details-actions"><button type="button" id="downloadText" class="settings-link">↓ 전체 원고 저장 (.md)</button><button type="button" id="backupStory" class="settings-link">↓ 작품 백업 (.json)</button><button type="button" id="finishStory" class="settings-link">◇ 이야기 완결 / 재개</button><button type="button" id="deleteStory" class="settings-link danger">× 작품 삭제</button></div>
+        </aside>
+      </div>
+    </main>
+    <footer class="site-footer"><span class="footer-logo">relay<span>.</span></span><span>끝이 아니라, 다음 문장의 시작.</span><span>Made for stories written together ✳</span></footer>
+  </div>
+
+  <div id="createModal" class="modal-backdrop hidden" role="presentation">
+    <section class="modal dialog-create" role="dialog" aria-modal="true" aria-labelledby="createTitle">
+      <button class="close-modal" type="button" data-close="createModal" aria-label="닫기">×</button><span class="section-overline">A NEW STORY BEGINS</span><h2 id="createTitle">새 이야기의 첫 페이지</h2><p class="modal-sub">어떤 세계를 함께 만들어 볼까요?</p>
+      <form id="createForm">
+        <label class="field">작품 제목 <span class="required">*</span><input name="title" maxlength="60" required placeholder="예: 자정 이후의 도서관" autocomplete="off"></label>
+        <label class="field">이야기 소개 <span class="field-optional">선택</span><textarea name="premise" maxlength="300" rows="3" placeholder="어떤 이야기를 쓰고 싶은가요? 배경과 설정을 짧게 적어 주세요."></textarea></label>
+        <div class="form-two"><label class="field">장르<select name="genre"><option>판타지</option><option>미스터리</option><option>로맨스</option><option>SF</option><option>스릴러</option><option>일상</option><option>호러</option><option>자유</option></select></label><label class="field">한 장면 최대 글자 수<select name="limit"><option value="500">500자</option><option value="800" selected>800자</option><option value="1200">1,200자</option></select></label></div>
+        <label class="field">참여 작가의 순서 <span class="field-optional">선택</span><input name="authors" maxlength="250" placeholder="예: 민지, 서준, 지우"><span class="field-help">쉼표로 구분해 주세요. 비워두면 자유 릴레이가 됩니다.</span></label>
+        <div class="create-hint"><span>✦</span><p><strong>작가 순서를 정하면</strong> 장면을 등록할 때 차례가 맞는지 확인해 드려요. 계정 인증 없이 이름으로 확인하는 방식입니다.</p></div>
+        <button class="btn btn-primary btn-full" type="submit">이야기 만들고 시작하기 ↗</button>
+      </form>
+    </section>
+  </div>
+  <div id="guideModal" class="modal-backdrop hidden" role="presentation"><section class="modal guide-dialog" role="dialog" aria-modal="true" aria-labelledby="guideTitle"><button class="close-modal" type="button" data-close="guideModal" aria-label="닫기">×</button><span class="section-overline">WELCOME TO RELAY</span><h2 id="guideTitle">함께 쓰는 방법</h2><p class="modal-sub">relay.는 원고를 주고받으며 차례대로 쓰는 공간이에요.</p><div class="guide-steps"><div><span>01</span><section><h3>이야기의 세계를 정하세요.</h3><p>제목, 장르, 기본 설정과 함께 쓸 작가의 순서를 정합니다.</p></section></div><div><span>02</span><section><h3>한 사람이 한 장면을 씁니다.</h3><p>앞사람의 글을 읽고 다음 내용을 써 주세요. 원고는 브라우저에 자동 저장돼요.</p></section></div><div><span>03</span><section><h3>다음 작가에게 전달합니다.</h3><p>‘이야기 넘기기’로 현재 원고가 담긴 링크를 보내세요. 받은 사람은 이어 쓴 뒤 새 링크를 다시 보내야 합니다.</p></section></div></div><div class="guide-warning"><strong>알아두세요!</strong> 실시간 동기화 서비스는 아직 아닙니다. 링크를 처음 한 번만 공유하면 내용이 자동 업데이트되는 방식이 아니에요. 원고가 길어지면 JSON 백업 파일로 주고받으세요. 링크에 원고가 포함되니 비밀 정보는 적지 마세요.</div><button id="guideStart" type="button" class="btn btn-primary btn-full">이해했어요, 시작할래요 ↗</button></section></div>
+  <div id="shareModal" class="modal-backdrop hidden" role="presentation"><section class="modal share-dialog" role="dialog" aria-modal="true" aria-labelledby="shareTitle"><button class="close-modal" type="button" data-close="shareModal" aria-label="닫기">×</button><div class="share-illustration">✉</div><span class="section-overline">PASS THE PEN</span><h2 id="shareTitle">다음 문장, 부탁해!</h2><p class="modal-sub">다음 작가에게 현재까지의 이야기를 통째로 보내 주세요.</p><div class="share-info"><span>다음 집필자</span><strong id="shareNextWriter">누구나 참여 가능</strong></div><div id="shareLinkBox" class="share-link-box"><input id="shareLinkInput" readonly aria-label="원고 전달 링크"><button type="button" id="copyShareLink">링크 복사</button></div><p id="shareLinkHelp" class="share-help">받는 사람이 링크를 열면 현재까지의 원고가 그 기기에 복사됩니다.</p><button type="button" class="btn btn-outline btn-full" id="shareDownloadJson">↓ 긴 이야기라면 JSON으로 전달</button><p class="share-disclaimer">같은 링크를 다시 열어도 최신 수정 내용으로 자동 갱신되지는 않아요.</p></section></div>
+  <div id="readModal" class="modal-backdrop hidden" role="presentation"><section class="read-dialog" role="dialog" aria-modal="true" aria-labelledby="readTitle"><div class="read-header"><div><span>RELAY READING MODE</span><h2 id="readTitle">이야기 제목</h2></div><button type="button" class="read-close" data-close="readModal" aria-label="읽기 모드 닫기">×</button></div><div class="read-body" id="readBody"></div><div class="read-footer"><span id="readCount">0개의 장면</span><button type="button" class="btn btn-outline" data-close="readModal">글쓰기로 돌아가기 ↗</button></div></section></div>
+  <div id="nameModal" class="modal-backdrop hidden" role="presentation"><section class="modal name-dialog" role="dialog" aria-modal="true" aria-labelledby="nameTitle"><button class="close-modal" type="button" data-close="nameModal" aria-label="닫기">×</button><span class="section-overline">YOUR PEN NAME</span><h2 id="nameTitle">어떻게 불러드릴까요?</h2><p class="modal-sub">이 이름이 내가 쓴 장면 옆에 표시됩니다.</p><form id="nameForm"><label class="field">작가 이름<input id="nicknameInput" required maxlength="24" placeholder="작가 이름"></label><button type="submit" class="btn btn-primary btn-full">이 이름으로 시작하기 ↗</button></form></section></div>
+  <input type="file" id="importFile" accept=".json,application/json" hidden>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

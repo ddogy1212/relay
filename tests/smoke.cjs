@@ -98,6 +98,12 @@ async function test() {
   await new Promise(r=>setImmediate(r));
   const link=left.copied;
   assert.ok(link.includes('#relay='),'snapshot handoff link copied');
+  assert.equal(left.get('nudgeBtn').classList.contains('hidden'),false,'gentle reminder visible while waiting');
+  left.get('nudgeBtn').fire('click');
+  await new Promise(r=>setImmediate(r));
+  left.get('copyLinkBtn').fire('click');
+  await new Promise(r=>setImmediate(r));
+  assert.ok(left.copied.includes('둘째!') && left.copied.includes('#relay='),'reminder copies message and the story link');
 
   const right=setup(new URL(link).hash);
   await new Promise(r=>setImmediate(r));

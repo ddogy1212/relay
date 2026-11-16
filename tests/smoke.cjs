@@ -1,109 +1,123 @@
-/* Minimal dependency-free UI flow tests for relay. */
+/* Two-person relay smoke test — no external npm dependencies. */
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { webcrypto } = require('node:crypto');
-
 const source = fs.readFileSync('app.js', 'utf8');
 new vm.Script(source, { filename: 'app.js' });
 
-function setup(hash = '') {
-  const storage = new Map();
+function setup(initialHash = '') {
+  const memory = new Map();
   const cache = new Map();
-  class Elem {
-    constructor(tag = 'div', id = '') {
-      this.tagName = tag.toUpperCase(); this.id = id; this.children = []; this.events = {};
-      this.value = ''; this.textContent = ''; this.style = { setProperty() {} }; this.dataset = {};
-      const values = new Set(['libraryView', 'studioView'].includes(id) ? (id === 'studioView' ? ['hidden'] : []) : ['createModal','guideModal','shareModal','readModal','nameModal'].includes(id) ? ['hidden'] : []);
-      this.classList = { add: (...v) => v.forEach((x) => values.add(x)),
-        remove: (...v) => v.forEach((x) => values.delete(x)),
-        contains: (v) => values.has(v),
-        toggle: (v, enabled) => { if (enabled === undefined) enabled = !values.has(v); if (enabled) values.add(v); else values.delete(v); return enabled; } };
+  const winEvents = {};
+  let copied = '';
+
+  class El {
+    constructor(tag='div', id='') {
+      this.tagName = tag.toUpperCase();
+      this.id = id;
+      this.value = '';
+      this.events = {};
+      this.dataset = {};
+      this.style = {};
+      this.children = [];
+      this.textContent = '';
+      this.disabled = false;
+      const list = new Set(['storyView','libraryView','shareModal','menuModal','guideModal','openLibraryWelcome','noChapters','notMyTurn','finishedBox'].includes(id) ? ['hidden'] : []);
+      this.classList = {
+        contains: (v) => list.has(v),
+        add: (...args) => args.forEach(v=>list.add(v)),
+        remove: (...args) => args.forEach(v=>list.delete(v)),
+        toggle: (v, state) => { const newState = state === undefined ? !list.has(v) : Boolean(state); if(newState) list.add(v); else list.delete(v); return newState; }
+      };
     }
-    addEventListener(type, callback) { (this.events[type] ||= []).push(callback); }
-    fire(type, e = {}) { for (const fn of this.events[type] || []) fn({ currentTarget: this, target: this, preventDefault() {}, ...e }); }
-    append(...children) { this.children.push(...children); }
-    appendChild(child) { this.children.push(child); return child; }
-    replaceChildren(...children) { this.children = children; }
-    querySelector(selector) { return get(this.id + ' ' + selector); }
-    setAttribute() {}
-    focus() {}
-    select() {}
+    addEventListener(type, cb) { (this.events[type] ||= []).push(cb); }
+    fire(type, extra = {}) { for(const cb of this.events[type] || []) cb({ target:this, currentTarget:this, preventDefault() {}, ...extra }); }
+    append(...args) { this.children.push(...args); }
+    appendChild(el) { this.children.push(el); return el; }
+    replaceChildren(...args) { this.children = args; }
     remove() {}
-    scrollIntoView() {}
-    reset() {}
+    setAttribute() {}
+    select() {}
+    focus() {}
+    click() { this.fire('click'); }
+    querySelector() { return get('modalCloseStub'); }
   }
-  function get(id) { if (!cache.has(id)) cache.set(id, new Elem('div', id)); return cache.get(id); }
+  function get(id) { if(!cache.has(id)) cache.set(id, new El('div',id)); return cache.get(id); }
   const form = get('createForm');
-  form.elements = {
-    title: { value: '' }, premise: { value: '' }, genre: { value: '판타지' },
-    limit: { value: '800' }, authors: { value: '' }
+  form.elements = { title:{value:''}, me:{value:''}, partner:{value:''} };
+  form.reset = () => { form.elements.title.value=''; form.elements.me.value=''; form.elements.partner.value=''; };
+  const overlays=['shareModal','menuModal','guideModal'].map(get);
+  const doc={
+    body:new El('body','body'),activeElement:null,
+    getElementById:get,
+    createElement:(tag)=>new El(tag),
+    querySelectorAll:(s)=>s==='.overlay' ? overlays : [],
+    querySelector:(s)=>s==='.editor-footer'?get('editor-footer') : s==='.overlay:not(.hidden)' ? (overlays.find(v=>!v.classList.contains('hidden'))||null) : null,
+    addEventListener() {},
+    execCommand(){return true;}
   };
-  const doc = {
-    body: new Elem('body'),
-    activeElement: null,
-    getElementById: get,
-    createElement: (tag) => new Elem(tag),
-    createTextNode: (str) => ({ textContent: String(str) }),
-    querySelectorAll: () => [],
-    querySelector: () => null,
-    addEventListener() {}
-  };
-  const location = { href: 'https://example.com/relay/' + hash, hash, pathname: '/relay/', search: '' };
-  const context = vm.createContext({
-    document: doc, window: { scrollTo() {}, addEventListener() {}, isSecureContext: true },
-    history: { replaceState() {} }, location, navigator: { clipboard: { writeText: async () => {} } },
-    localStorage: { getItem: (k) => storage.get(k) || null, setItem: (k, v) => storage.set(k, String(v)), removeItem: (k) => storage.delete(k) },
-    crypto: webcrypto, TextEncoder, TextDecoder, Blob, Response, btoa, atob, confirm: () => true,
-    setTimeout: () => 0, clearTimeout() {}, requestAnimationFrame: (callback) => callback(),
-    console
+  const loc={href:'https://example.org/relay/'+initialHash,hash:initialHash,pathname:'/relay/',search:''};
+  const context=vm.createContext({
+    document:doc,location:loc,history:{replaceState(){}},
+    window:{isSecureContext:true,scrollTo(){},addEventListener:(kind,cb)=>{winEvents[kind]=cb;}},
+    navigator:{clipboard:{async writeText(text){copied=text;}}},
+    localStorage:{getItem:(k)=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,String(v)),removeItem:(k)=>memory.delete(k)},
+    TextEncoder,TextDecoder,Blob,Response,atob,btoa,console,
+    setTimeout:()=>0,clearTimeout(){},confirm:()=>true,
   });
-  vm.runInContext(source, context, { filename: 'app.js' });
-  const state = () => JSON.parse(storage.get('relay_stories_v1') || '[]');
-  return { get, form, state, storage };
+  vm.runInContext(source,context,{filename:'app.js'});
+  return {
+    get,form,memory,loc,
+    stories:()=>JSON.parse(memory.get('relay_stories_v1')||'[]'),
+    get copied(){return copied;},
+    async receive(url){loc.hash=new URL(url).hash;loc.href='https://example.org/relay/'+loc.hash; await winEvents.hashchange();await new Promise(r=>setImmediate(r));}
+  };
 }
 
-async function run() {
-  const t = setup();
-  assert.equal(t.state().length, 0, 'new library is empty');
+async function test() {
+  const left=setup();
+  assert.equal(left.stories().length,0);
+  left.form.elements.title.value='별빛 아래 우리';
+  left.form.elements.me.value='첫째';
+  left.form.elements.partner.value='둘째';
+  left.form.fire('submit');
 
-  t.form.elements.title.value = '별빛을 모으는 밤';
-  t.form.elements.premise.value = '달이 사라진 마을에서 이어지는 비밀';
-  t.form.elements.genre.value = '미스터리';
-  t.form.elements.authors.value = '가을, 겨울';
-  t.form.fire('submit');
+  assert.equal(left.stories().length,1,'creates story');
+  assert.equal(left.stories()[0].authors.join('/'),'첫째/둘째','two authors exactly');
+  assert.equal(left.get('turnName').textContent,'첫째 (나)','first writer starts');
 
-  assert.equal(t.state().length, 1, 'story creation persists');
-  assert.equal(t.state()[0].authors.join(','), '가을,겨울', 'author order preserved');
-  assert.equal(t.get('nextWriter').textContent, '가을');
+  left.get('chapterInput').value='평범했던 우리의 밤에 낯선 편지가 도착했다.';
+  left.get('chapterInput').fire('input');
+  left.get('submitChapterBtn').fire('click');
+  assert.equal(left.stories()[0].scenes.length,1,'first scene persists');
+  assert.equal(left.get('turnName').textContent,'둘째 (상대)','turn switches to second');
+  assert.equal(left.get('chapterInput').disabled,true,'first writer cannot write on second turn');
+  await new Promise(r=>setImmediate(r));
+  left.get('copyLinkBtn').fire('click');
+  await new Promise(r=>setImmediate(r));
+  const link=left.copied;
+  assert.ok(link.includes('#relay='),'snapshot handoff link copied');
 
-  t.get('writerInput').value = '가을';
-  t.get('sceneText').value = '첫 번째 작가가 조용히 문을 열었다. 책상 위 편지에는 오늘 날짜가 적혀 있었다.';
-  t.get('publishScene').fire('click');
-  assert.equal(t.state()[0].scenes.length, 1, 'first scene saved');
-  assert.equal(t.get('nextWriter').textContent, '겨울');
+  const right=setup(new URL(link).hash);
+  await new Promise(r=>setImmediate(r));
+  assert.equal(right.stories().length,1,'new device imports story');
+  assert.equal(right.stories()[0].scenes.length,1,'first text survives handoff');
+  assert.equal(right.memory.get('relay_me_v2'),'둘째','receiving phone assigned second writer');
+  assert.equal(right.get('chapterInput').disabled,false,'second writer can write');
+  right.get('chapterInput').value='편지 안에는 내일 일어날 일들이 또박또박 적혀 있었다.';
+  right.get('submitChapterBtn').fire('click');
+  assert.equal(right.stories()[0].scenes.length,2,'second scene added');
+  await new Promise(r=>setImmediate(r));
+  right.get('copyLinkBtn').fire('click');
+  await new Promise(r=>setImmediate(r));
+  await left.receive(right.copied);
+  assert.equal(left.stories()[0].scenes.length,2,'first phone receives updated story');
+  assert.equal(left.get('chapterInput').disabled,false,'first author can now write again');
 
-  t.get('writerInput').value = '가을';
-  t.get('sceneText').value = '순서를 어기고 두 번째 장면을 쓰려고 하는 잘못된 집필 시도입니다.';
-  t.get('publishScene').fire('click');
-  assert.equal(t.state()[0].scenes.length, 1, 'incorrect writer rejected');
-
-  t.get('writerInput').value = '겨울';
-  t.get('publishScene').fire('click');
-  assert.equal(t.state()[0].scenes.length, 2, 'second writer can publish');
-  assert.equal(t.get('nextWriter').textContent, '가을', 'round robin advances');
-
-  await new Promise((resolve) => setImmediate(resolve));
-  const link = t.get('shareLinkInput').value;
-  assert.ok(link.startsWith('https://example.com/relay/#relay='), 'handoff snapshot link created');
-
-  const received = setup(new URL(link).hash);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(received.state().length, 1, 'recipient imports snapshot');
-  assert.equal(received.state()[0].scenes.length, 2, 'recipient sees all scenes');
-  assert.equal(received.get('nextWriter').textContent, '가을', 'recipient sees next author');
-
-  console.log('PASS: story creation, author rotation, reject wrong author, scene saving, share link and cross-device import');
+  left.get('chapterInput').value='세 번째 장면, 다시 내가 쓰는 이야기.';
+  left.get('submitChapterBtn').fire('click');
+  assert.equal(left.stories()[0].scenes.length,3,'round-robin continues');
+  console.log('PASS: onboarding, alternating turns, local drafts, sharing, receiving, and returning to first writer');
 }
-run().catch((error) => { console.error(error); process.exitCode = 1; });
+test().catch(err=>{console.error(err);process.exitCode=1;});

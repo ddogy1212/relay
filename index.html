@@ -67,6 +67,9 @@
           <p id="pairNames" class="pair-names">작가 1 & 작가 2</p>
           <button id="identityBtn" type="button" class="identity-link">이 기기 작가: 선택하기 · 바꾸기</button>
           <p id="storyCount" class="scene-count">0개의 장면</p>
+          <div class="cloud-tools"><span id="cloudStatus" class="cloud-status">이 기기에 저장됨</span><button id="cloudRefreshBtn" class="cloud-refresh hidden" type="button">↻ 새 글 확인</button></div>
+          <button id="enableCloudBtn" class="primary-btn cloud-enable" type="button">☁ 두 사람 자동 동기화 켜기</button>
+          <button id="inviteBtn" class="secondary-btn invite-btn hidden" type="button">💌 상대 휴대폰 연결 링크 보내기</button>
         </div>
 
         <div class="story-step"><div><span class="step-index">01</span><span>지금까지의 이야기</span></div><button class="text-link" id="downloadBtn" type="button">원고 저장 ↓</button></div>
@@ -86,7 +89,7 @@
             <span id="counter">0 / 1,200자</span>
           </div>
           <button id="submitChapterBtn" class="primary-btn wide" type="button">글 저장하고 상대에게 보내기 <span>→</span></button>
-          <p id="form-hint" class="form-hint">글을 저장한 뒤 공유 화면에서 상대에게 최신 원고를 보내 주세요.</p>
+          <p id="form-hint" class="form-hint">글을 저장하면 상대방에게 자동으로 동기화돼요.</p>
           <div id="finishedBox" class="finished-box hidden"><span>🌷</span><h3>우리 이야기가 완성됐어요!</h3><p>이제 처음부터 천천히 읽어 보세요.</p></div>
         </section>
         <div class="after-story"><button type="button" class="light-link" id="exportJsonBtn">작품 백업하기</button><button type="button" class="light-link" id="toggleFinishedBtn">소설 완결하기</button></div>
@@ -115,7 +118,7 @@
       <button id="nativeShareBtn" class="primary-btn wide" type="button">📨 상대에게 링크 보내기 <span>→</span></button>
       <button id="copyLinkBtn" class="secondary-btn wide" type="button">🔗 링크 복사하기</button>
       <button id="downloadShareBtn" class="text-link solo" type="button">글이 길어서 링크가 안 되나요? 파일로 보내기</button>
-      <div id="shareTip" class="share-tip">매 차례마다 새 링크를 주고받는 방식이에요.<br>같은 링크로 두 기기가 자동 동기화되지는 않아요.</div>
+      <div id="shareTip" class="share-tip">작가 초대 링크는 처음 연결할 때 한 번만 공유하면 돼요.</div>
     </section>
   </div>
 
@@ -135,9 +138,9 @@
       <button class="dialog-close" data-close="guideModal" aria-label="닫기" type="button">×</button>
       <div class="dialog-icon">📖</div><h2 id="guideTitle">둘이 쓰는 방법</h2>
       <div class="guide-row"><span>1</span><p>두 사람의 이름과 소설 제목을 정해요.</p></div>
-      <div class="guide-row"><span>2</span><p>내 차례에 이야기를 쓰고 <strong>글 저장하고 상대에게 보내기</strong>를 눌러요.</p></div>
-      <div class="guide-row"><span>3</span><p>상대는 받은 <strong>새 링크</strong>를 열어 이어 쓰고, 다시 새 링크를 보내요.</p></div>
-      <p class="caution">이 사이트는 각자의 휴대폰에서 글을 저장하고 링크로 전달해요. 실시간으로 같은 원고가 동기화되지 않으니 매번 최신 링크를 사용하세요. 중요한 글은 백업 파일로 보관하세요.</p>
+      <div class="guide-row"><span>2</span><p><strong>자동 동기화</strong>를 켜고 상대에게 연결 링크를 보낸 뒤, 내 차례에 이야기를 저장해요.</p></div>
+      <div class="guide-row"><span>3</span><p>상대는 <strong>처음 받은 초대 링크</strong>로 연결해요. 이후에는 상대가 저장한 글이 내 화면에 자동 반영돼요.</p></div>
+      <p class="caution">자동 동기화를 켜고 상대에게 초대 링크를 한 번 보내면 그 뒤에는 새 글이 자동으로 불러와져요. 인터넷 연결이 필요하며, 알림이 휴대폰 밖으로 푸시되지는 않아요. 기존 작품도 자동 동기화 버튼으로 연결할 수 있어요.</p>
       <button type="button" class="primary-btn wide" data-close="guideModal">알겠어요! ♡</button>
     </section>
   </div>

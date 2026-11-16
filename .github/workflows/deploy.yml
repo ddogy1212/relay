@@ -24,6 +24,8 @@ jobs:
         run: node --check app.js
       - name: Smoke test writing and sharing
         run: node tests/smoke.cjs
+      - name: Two-phone cloud sync test
+        run: node tests/cloud-smoke.cjs
 
   deploy:
     needs: test

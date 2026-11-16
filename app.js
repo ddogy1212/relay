@@ -311,7 +311,7 @@
     return JSON.parse(new TextDecoder().decode(bytes));
   }
   function reminderText(story) {
-    return nextWriter(story) + '아, 우리 "' + story.title + '" 다음 장면 네 차례야! 📖💌 시간 될 때 이어 써줘 :)';
+    return nextWriter(story) + '! 우리 "' + story.title + '" 다음 장면 네 차례야! 📖💌 시간 될 때 이어 써줘 :)';
   }
   function shareMessage(story) {
     return shareMode === 'reminder' ? reminderText(story) : '우리 릴레이소설, 이번엔 네 차례야! ♡';

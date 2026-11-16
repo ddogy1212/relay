@@ -4,6 +4,13 @@
   const ME = 'relay_me_v2';
   const ACTIVE = 'relay_active_story_v2';
   const DRAFT = 'relay_draft_';
+  const CLOUD_STORAGE = 'relay_cloud_keys_v1';
+  const API_URL = 'https://cwalvekdxcrcuyxmsjiz.supabase.co';
+  // Public/publishable browser key, NOT a service-role secret.
+  const API_KEY = 'sb_publishable_bsJ2XAmgd8ARSMv-U-Lp2w_-cWLpr2U';
+  let cloudKeys = loadCloudKeys();
+  let isCreatingCloud = false;
+  let isReadingCloud = false;
   const MAX_CHAR = 1200;
   const MAX_FILE = 3 * 1024 * 1024;
   const MAX_LINK = 12000;
@@ -69,7 +76,148 @@
     try { localStorage.setItem(STORAGE, JSON.stringify(stories)); return true; }
     catch (_) { announce('저장 공간이 부족해요. 메뉴에서 백업 파일을 저장해 주세요.'); return false; }
   }
+  function loadCloudKeys() {
+    try { const val=JSON.parse(localStorage.getItem(CLOUD_STORAGE)||'{}'); return val && typeof val==='object' && !Array.isArray(val) ? val : {}; }
+    catch (_) { return {}; }
+  }
+  function saveCloudKeys() {
+    try { localStorage.setItem(CLOUD_STORAGE, JSON.stringify(cloudKeys)); return true; }
+    catch (_) { announce('연결 정보를 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.'); return false; }
+  }
+  function cred(id) { return cloudKeys[id] && cloudKeys[id].token ? cloudKeys[id] : null; }
+  function newSecret() {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2,'0')).join('');
+  }
+  async function secretHash(secret) {
+    const digest = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(secret));
+    return Array.from(new Uint8Array(digest),(x)=>x.toString(16).padStart(2,'0')).join('');
+  }
+  async function rpc(name, body) {
+    if (typeof fetch !== 'function') throw Error('이 브라우저는 네트워크 연결을 지원하지 않아요.');
+    const response = await fetch(API_URL + '/rest/v1/rpc/' + name, {
+      method: 'POST', mode: 'cors', cache: 'no-store',
+      headers: { 'apikey': API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      let detail = '';
+      try { const json = await response.json(); detail = String(json.message || json.code || ''); } catch (_) {}
+      if (detail.includes('STALE_VERSION')) throw Error('상대가 먼저 쓴 장면이 도착했어요. 최신 이야기를 불러와 주세요.');
+      if (detail.includes('NOT_YOUR_TURN')) throw Error('지금은 상대방 차례예요. 화면을 갱신해 주세요.');
+      if (detail.includes('UNAUTHORIZED')) throw Error('이 소설에 접근할 수 없어요. 처음 받은 초대 링크를 확인해 주세요.');
+      throw Error(detail || '서버가 응답하지 않아요.');
+    }
+    return response.json();
+  }
   function current() { return stories.find((s) => s.id === currentId) || null; }
+  function updateCloudStatus(label, state = '') {
+    const el = $('cloudStatus');
+    el.textContent = label;
+    el.classList.toggle('online', state === 'online');
+    el.classList.toggle('offline', state === 'offline');
+  }
+  async function enableCloud(promptFirst = true) {
+    const story = current(); if (!story) return;
+    if (cred(story.id)) { await readCloud(true); return openShare('invite'); }
+    if (isCreatingCloud) return;
+    if (promptFirst && !confirm('이 소설을 두 휴대폰에서 함께 볼 수 있게 온라인 저장소에 올릴까요? 상대방에게 연결 링크를 한 번 보내면 자동 동기화돼요.')) return;
+    if (story.scenes.length > 200) return announce('기존 장면이 200개를 넘어 자동 연결할 수 없어요. 먼저 JSON으로 백업해 주세요.');
+    if (!crypto || typeof crypto.getRandomValues !== 'function' || !crypto.subtle || typeof crypto.randomUUID !== 'function') {
+      return announce('안전한 HTTPS 브라우저에서 열어야 동기화할 수 있어요.');
+    }
+    isCreatingCloud = true;
+    const oldId = story.id;
+    const remoteId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(oldId) ? oldId : crypto.randomUUID();
+    const a = newSecret(), b = newSecret();
+    const button=$('enableCloudBtn');button.disabled = true;button.textContent = '☁ 동기화 연결 중…';
+    updateCloudStatus('서버 연결 중…');
+    try {
+      await rpc('relay_sync_create', {
+        p_room_id: remoteId, p_title: story.title, p_author_a: story.authors[0], p_author_b: story.authors[1],
+        p_key_a_hash: await secretHash(a), p_key_b_hash: await secretHash(b),
+        p_scenes: story.scenes.map((scene) => ({ text:scene.text }))
+      });
+      const drafts = localStorage.getItem(DRAFT + oldId);
+      if (remoteId !== oldId) {
+        story.id = remoteId;
+        if (drafts) localStorage.setItem(DRAFT + remoteId, drafts);
+        localStorage.removeItem(DRAFT + oldId);
+        localStorage.setItem(ACTIVE,remoteId);
+        currentId=remoteId;
+      }
+      cloudKeys[remoteId] = { token:a, partnerToken:b, role:0 };
+      saveCloudKeys();
+      putMe(story.authors[0]);
+      persist();
+      await readCloud(false);
+      renderStory();
+      announce('자동 동기화 연결 완료! 이제 상대를 한 번만 초대해 주세요. ☁');
+      if (promptFirst === false || confirm('상대 휴대폰 연결 링크를 지금 보낼까요?')) openShare('invite');
+    } catch (err) {
+      updateCloudStatus('연결 실패 · 다시 시도해 주세요','offline');
+      announce('동기화 연결 실패: ' + err.message);
+    } finally {
+      isCreatingCloud = false;
+      button.disabled = false;
+      button.textContent = '☁ 두 사람 자동 동기화 켜기';
+      if (current()) renderStory();
+    }
+  }
+  async function readCloud(manual = false) {
+    const active = current(), creds = active && cred(active.id);
+    if (!active || !creds || isReadingCloud) return;
+    if (isCreatingCloud && !cloudKeys[active.id]) return;
+    isReadingCloud = true;
+    const beforeId=active.id;
+    try {
+      const data=await rpc('relay_sync_read',{ p_room_id:beforeId,p_token:creds.token });
+      if (!data) throw Error('온라인 원고를 찾지 못했어요. 연결 링크를 확인해 주세요.');
+      const latest = normalize(data);
+      if (creds.role === 0 || creds.role === 1) putMe(latest.authors[creds.role]);
+      const old = stories.find((s)=>s.id===beforeId);
+      if (old && currentId === beforeId) {
+        const changed=JSON.stringify(old.scenes)!==JSON.stringify(latest.scenes) || old.status!==latest.status;
+        if (changed) {
+          const added=latest.scenes.length>old.scenes.length;
+          const ix=stories.findIndex((s)=>s.id===beforeId);
+          stories[ix]=latest;
+          persist();
+          renderStory();
+          if (added && old.scenes.length && !manual) announce('새 장면이 도착했어! 📖💌');
+          else if (added && manual) announce('새로운 글을 불러왔어요.');
+        }
+        updateCloudStatus('☁ 자동 동기화 연결됨','online');
+      }
+    } catch (err) {
+      if (currentId === beforeId) updateCloudStatus('연결 안 됨 · 새 글 확인 필요','offline');
+      if (manual) announce('동기화 오류: ' + err.message);
+    } finally { isReadingCloud = false; }
+  }
+  async function receiveCloudInvite(hash) {
+    const match=hash.match(/^#join=([0-9a-f-]{36})\.([a-f0-9]{64})$/i);
+    if (!match) { announce('초대 링크 형식이 올바르지 않아요.');return; }
+    const id=match[1], token=match[2];
+    try {
+      const data=await rpc('relay_sync_read',{p_room_id:id,p_token:token});
+      if (!data) throw Error('초대 링크가 유효하지 않아요.');
+      const incoming=normalize(data);
+      const found=stories.findIndex((s)=>s.id===id);
+      if (found>=0) stories[found]=incoming; else stories.unshift(incoming);
+      cloudKeys[id]={token,role:1};
+      if (!saveCloudKeys() || !persist()) return;
+      putMe(incoming.authors[1]);
+      openStory(id);
+      updateCloudStatus('☁ 자동 동기화 연결됨','online');
+      announce('두 휴대폰 연결 완료! 이제 새 글이 자동으로 보여요. 💜');
+    } catch (err) { announce('연결 실패: ' + err.message); }
+  }
+  function cloudCheck() {
+    if (typeof document.hidden === 'boolean' && document.hidden) return;
+    if (currentId && cred(currentId) && !isCreatingCloud) readCloud(false);
+  }
+  
   function nextWriter(story) { return story.authors[story.scenes.length % 2]; }
   function me() { return localStorage.getItem(ME) || ''; }
   function putMe(name) { localStorage.setItem(ME, name); }

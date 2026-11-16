@@ -16,6 +16,7 @@
   let stories = load();
   let currentId = null;
   let shareUrl = '';
+  let shareMode = 'normal';
   let toastTimeout;
 
   function element(tag, className, text) {
@@ -169,6 +170,7 @@
       list.append(card);
     });
     $('notMyTurn').classList.toggle('hidden', finished || mine);
+    $('nudgeBtn').classList.toggle('hidden', finished || mine || !story.scenes.length);
     $('chapterInput').classList.toggle('hidden', finished || !mine);
     $('chapterInput').disabled = finished || !mine;
     document.querySelector('.editor-footer').classList.toggle('hidden', finished || !mine);
@@ -308,10 +310,23 @@
     if (bytes.length > MAX_FILE) throw Error('원고 크기가 너무 커요.');
     return JSON.parse(new TextDecoder().decode(bytes));
   }
-  async function openShare() {
+  function reminderText(story) {
+    return nextWriter(story) + '아, 우리 "' + story.title + '" 다음 장면 네 차례야! 📖💌 시간 될 때 이어 써줘 :)';
+  }
+  function shareMessage(story) {
+    return shareMode === 'reminder' ? reminderText(story) : '우리 릴레이소설, 이번엔 네 차례야! ♡';
+  }
+  async function openShare(mode = 'normal') {
     const story = current(); if (!story) return;
+    shareMode = mode === 'reminder' ? 'reminder' : 'normal';
     shareUrl = '';
     $('recipientName').textContent = story.status === 'finished' ? '우리 둘이 읽을' : nextWriter(story);
+    $('shareTitle').firstChild.textContent = shareMode === 'reminder' ? '살짝 알림! 이번엔 ' : '이번엔 ';
+    $('shareDescription').textContent = shareMode === 'reminder'
+      ? '상대에게 이어 쓸 차례라는 메시지와 현재 원고 링크를 함께 보내요.'
+      : '현재까지의 원고가 담긴 새 링크를 상대에게 보내 주세요.';
+    $('nativeShareBtn').textContent = shareMode === 'reminder' ? '💌 메시지로 알려주기 ↗' : '📨 상대에게 링크 보내기 ↗';
+    $('copyLinkBtn').textContent = shareMode === 'reminder' ? '🔗 메시지와 링크 복사' : '🔗 링크 복사하기';
     $('nativeShareBtn').disabled = true;
     $('copyLinkBtn').disabled = true;
     $('shareTip').textContent = '원고를 정리하고 있어요…';
@@ -340,11 +355,13 @@
   }
   async function copyLink() {
     if (!shareUrl) return announce('링크를 먼저 만들어 주세요.');
+    const story = current();
+    const outgoing = shareMode === 'reminder' && story ? shareMessage(story) + '\n' + shareUrl : shareUrl;
     try {
-      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(shareUrl);
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(outgoing);
       else {
         const input = element('textarea');
-        input.value = shareUrl; input.style.position = 'fixed'; input.style.opacity = '0';
+        input.value = outgoing; input.style.position = 'fixed'; input.style.opacity = '0';
         document.body.append(input); input.select();
         const ok = document.execCommand('copy'); input.remove();
         if (!ok) throw Error('not copied');
@@ -357,7 +374,7 @@
     const story = current();
     if (navigator.share) {
       try {
-        await navigator.share({ title: story?.title || '우리의 릴레이 소설', text: '이번엔 네 차례야! ♡', url: shareUrl });
+        await navigator.share({ title: '릴레이소설 · ' + (story?.title || '우리의 이야기'), text: story ? shareMessage(story) : '이번엔 네 차례야! ♡', url: shareUrl });
         announce('공유 화면에서 원하는 앱을 선택해 보내 주세요.');
       } catch (err) {
         if (err.name !== 'AbortError') announce('공유할 수 없어요. 링크 복사 버튼을 이용해 주세요.');
@@ -387,6 +404,7 @@
       updateCount();
     });
     $('submitChapterBtn').addEventListener('click', submitChapter);
+    $('nudgeBtn').addEventListener('click', () => openShare('reminder'));
     $('identityBtn').addEventListener('click', chooseIdentity);
     $('toggleFinishedBtn').addEventListener('click', finishToggle);
     $('downloadBtn').addEventListener('click', exportMarkdown);

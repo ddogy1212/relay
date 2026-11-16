@@ -63,6 +63,7 @@
             <div class="person-avatar person-b" id="avatarB">나</div>
           </div>
           <p id="pairNames" class="pair-names">작가 1 & 작가 2</p>
+          <button id="identityBtn" type="button" class="identity-link">이 기기 작가: 선택하기 · 바꾸기</button>
           <p id="storyCount" class="scene-count">0개의 장면</p>
         </div>
 
@@ -73,7 +74,7 @@
         <section class="compose-card" id="composeCard">
           <div class="story-step compose-step"><div><span class="step-index">02</span><span>다음 이야기 쓰기</span></div></div>
           <div class="turn-alert"><span class="turn-emoji">✍️</span><div><small>이번 차례는</small><strong id="turnName">작가 이름</strong></div><span class="turn-badge" id="turnBadge">1번째 차례</span></div>
-          <div id="notMyTurn" class="turn-warning hidden">지금은 상대방 차례예요. 대신 작성하면 차례가 바뀔 수 있어요.</div>
+          <div id="notMyTurn" class="turn-warning hidden">지금은 상대방 차례예요. 최신 이야기를 전달하고 다음 차례를 기다려 주세요.</div>
           <label for="chapterInput" class="sr-only">이어 쓸 소설 내용</label>
           <textarea id="chapterInput" placeholder="여기서부터 이야기를 이어가 보세요.&#10;한 문장으로 시작해도 좋아요 :)"
             maxlength="1200" spellcheck="true"></textarea>

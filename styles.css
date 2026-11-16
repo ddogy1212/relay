@@ -12,3 +12,15 @@
 
 /* One-tap, opt-in reminder. Never sends anything without the user's share action. */
 .nudge-btn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;margin:0 0 15px;border:1px solid #e6d9f5;background:#f5effc;border-radius:12px;padding:13px 12px;color:#7159b5;font-size:12px;font-weight:800}.nudge-btn span{font-size:17px;font-weight:500}.nudge-btn:hover{background:#eee5fb}.logo{font-family:var(--sans);font-size:25px;letter-spacing:-.07em}.footer{font-family:var(--sans)}@media(max-width:500px){.logo{font-size:23px}}
+
+/* Shared live workspace controls */
+.cloud-tools{display:flex;align-items:center;justify-content:center;gap:11px;margin:7px 0 12px;flex-wrap:wrap}
+.cloud-status{font-size:11px;color:#9a8da0;background:#fff;border:1px solid #ede5ed;border-radius:30px;padding:5px 11px}
+.cloud-status.online{color:#528a73;background:#edf8f0;border-color:#d8eddf}
+.cloud-status.offline{color:#c17c60;background:#fff4eb;border-color:#f9e7d8}
+.cloud-refresh{font-size:11px;color:#7666aa;border:0;background:none;text-decoration:underline;padding:5px}
+.cloud-enable{max-width:340px;margin:12px auto 0;padding:13px 17px;font-size:12px;background:#8b79cb}
+.invite-btn{max-width:330px;margin:11px auto 0;padding:12px 13px;font-size:12px}
+.story-hero .invite-btn{display:flex;align-items:center;justify-content:center}
+.story-hero .cloud-enable{display:flex;align-items:center;justify-content:center}
+@media(max-width:500px){.cloud-tools{gap:6px}.cloud-status,.cloud-refresh{font-size:10px}.cloud-enable,.invite-btn{width:100%;max-width:360px}}

@@ -321,7 +321,7 @@
     shareMode = mode === 'reminder' ? 'reminder' : 'normal';
     shareUrl = '';
     $('recipientName').textContent = story.status === 'finished' ? '우리 둘이 읽을' : nextWriter(story);
-    $('shareTitle').firstChild.textContent = shareMode === 'reminder' ? '살짝 알림! 이번엔 ' : '이번엔 ';
+    $('shareTitlePrefix').textContent = shareMode === 'reminder' ? '살짝 알림! 이번엔 ' : '이번엔 ';
     $('shareDescription').textContent = shareMode === 'reminder'
       ? '상대에게 이어 쓸 차례라는 메시지와 현재 원고 링크를 함께 보내요.'
       : '현재까지의 원고가 담긴 새 링크를 상대에게 보내 주세요.';

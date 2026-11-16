@@ -279,17 +279,20 @@
     if (!persist()) { stories.shift(); return; }
     putMe(authorA);
     openStory(story.id);
-    announce('우리 소설이 만들어졌어! 첫 번째 장면을 써 봐 ♡');
+    announce('우리 소설을 만들었어! 두 사람 자동 동기화를 연결할게 ☁');
+    enableCloud(false);
   }
   function openStory(id) {
     const story = stories.find((s) => s.id === id);
     if (!story) return announce('작품을 찾지 못했어요.');
     currentId = id;
     try { localStorage.setItem(ACTIVE, id); } catch (_) { /* nonessential */ }
-    if (!story.authors.includes(me())) putMe(nextWriter(story));
+    if (cred(id) && [0,1].includes(cred(id).role)) putMe(story.authors[cred(id).role]);
+    else if (!story.authors.includes(me())) putMe(nextWriter(story));
     $('chapterInput').value = localStorage.getItem(DRAFT + story.id) || '';
     renderStory();
     reveal('storyView');
+    if (cred(id)) readCloud(false);
   }
   function renderStory() {
     const story = current(); if (!story) return;
@@ -302,6 +305,12 @@
     $('pairNames').textContent = story.authors.join('  &  ');
     $('identityBtn').textContent = '이 기기 작가: ' + (me() || '선택하기') + ' · 바꾸기';
     $('storyCount').textContent = story.scenes.length + '개의 장면이 이어졌어요';
+    const online = Boolean(cred(story.id));
+    $('enableCloudBtn').classList.toggle('hidden', online);
+    $('inviteBtn').classList.toggle('hidden', !online || cred(story.id).role !== 0 || !cred(story.id).partnerToken);
+    $('cloudRefreshBtn').classList.toggle('hidden', !online);
+    updateCloudStatus(online ? '☁ 자동 동기화 연결됨' : '이 휴대폰에만 저장됨 · 동기화를 켜 주세요', online ? 'online' : '');
+    $('submitChapterBtn').disabled = isCreatingCloud;
     $('storyStatus').textContent = finished ? '♡ 완결된 이야기' : '✦ 이어 쓰는 중';
     $('storyStatus').classList.toggle('done', finished);
     $('turnName').textContent = finished ? '완결된 이야기' : (mine ? next + ' (나)' : next + ' (상대)');
@@ -318,15 +327,17 @@
       list.append(card);
     });
     $('notMyTurn').classList.toggle('hidden', finished || mine);
+    $('notMyTurn').textContent = online ? '상대방 차례예요. 새 글이 등록되면 자동으로 여기 나타나요.' : '상대방 차례예요. 자동 동기화를 켜면 새 글이 자동으로 보여요.';
     $('nudgeBtn').classList.toggle('hidden', finished || mine || !story.scenes.length);
     $('chapterInput').classList.toggle('hidden', finished || !mine);
     $('chapterInput').disabled = finished || !mine;
     document.querySelector('.editor-footer').classList.toggle('hidden', finished || !mine);
     $('finishedBox').classList.toggle('hidden', !finished);
-    $('submitChapterBtn').textContent = finished ? '완성된 이야기 공유하기 ↗' : (mine ? '글 저장하고 상대에게 보내기 →' : '상대에게 최신 이야기 보내기 ↗');
+    $('submitChapterBtn').textContent = finished ? '완성된 이야기 공유하기 ↗' : (mine ? (online ? '내 장면 저장하기 ✓' : '글 저장하고 상대에게 보내기 →') : (online ? '새 글 확인하기 ↻' : '상대에게 최신 이야기 보내기 ↗'));
     $('form-hint').textContent = finished
-      ? '우리 둘의 이야기를 저장하거나 링크로 남겨 보세요.'
-      : (mine ? '글을 저장한 뒤 공유 화면에서 상대에게 최신 원고를 보내 주세요.' : '상대가 새 장면을 쓰면, 받은 최신 링크를 열어 주세요.');
+      ? '두 휴대폰에서 완성된 원고를 읽을 수 있어요.'
+      : (online ? (mine ? '인터넷에 저장되면 상대방 휴대폰에도 자동으로 표시돼요.' : '상대가 새 글을 저장하면 자동으로 가져와요. 약 12초마다 확인해요.')
+        : (mine ? '자동 동기화를 켜서 상대방과 연결해 주세요.' : '동기화를 켜고 상대를 초대하면 서로 자동으로 글을 볼 수 있어요.'));
     $('toggleFinishedBtn').textContent = finished ? '다시 이어 쓰기' : '소설 완결하기';
     updateCount();
   }
@@ -335,12 +346,32 @@
     $('counter').textContent = n.toLocaleString('ko-KR') + ' / ' + MAX_CHAR.toLocaleString('ko-KR') + '자';
     $('saveIndicator').textContent = n ? '임시 저장됐어요 ✓' : '임시 저장돼요 ✓';
   }
-  function submitChapter() {
+  async function submitChapter() {
     const story = current(); if (!story) return;
-    if (story.status === 'finished' || nextWriter(story) !== me()) return openShare();
+    if (isCreatingCloud) return announce('공동 저장 공간을 연결 중이에요. 연결 후 저장해 주세요.');
+    if (story.status === 'finished') return cred(story.id) ? readCloud(true) : openShare();
+    if (nextWriter(story) !== me()) return cred(story.id) ? readCloud(true) : openShare();
     const content = $('chapterInput').value.trim();
     if (!content) { $('chapterInput').focus(); return announce('한 문장만이라도 적어 볼까? ✍️'); }
     if (textSize(content) > MAX_CHAR) return announce('1,200자까지만 쓸 수 있어요.');
+    if (cred(story.id)) {
+      const button=$('submitChapterBtn');
+      button.disabled=true; button.textContent='☁ 온라인에 저장 중…';
+      try {
+        await rpc('relay_sync_append', {
+          p_room_id:story.id, p_token:cred(story.id).token,
+          p_content:content, p_expected_count:story.scenes.length
+        });
+        localStorage.removeItem(DRAFT + story.id);
+        $('chapterInput').value = '';
+        await readCloud(true);
+        announce('저장 완료! 상대 휴대폰에도 자동으로 반영돼요. 💜');
+      } catch (err) {
+        announce('저장 실패: ' + err.message + ' 원고는 임시 보관 중이에요.');
+        await readCloud(true);
+      } finally { button.disabled=false; if (currentId===story.id) renderStory(); }
+      return;
+    }
     const originalTime = story.updatedAt;
     story.scenes.push({ id: uid(), author: me(), text: content, createdAt: now() });
     story.updatedAt = now();
@@ -353,17 +384,26 @@
   }
   function chooseIdentity() {
     const story = current(); if (!story) return;
+    if (cred(story.id)) return announce('동기화된 이야기에서는 초대받은 작가의 이름을 사용해요. 다른 휴대폰은 초대 링크로 연결해 주세요.');
     const other = story.authors.find((n) => n !== me()) || story.authors[0];
     if (!confirm('이 기기를 사용하는 작가를 "' + other + '"(으)로 바꿀까요?')) return;
     putMe(other);
     renderStory();
     announce('이 기기 작가를 ' + other + '(으)로 변경했어요.');
   }
-  function finishToggle() {
+  async function finishToggle() {
     const story = current(); if (!story) return;
     if (story.status !== 'finished' && !story.scenes.length) return announce('장면을 하나 이상 쓴 후 완결할 수 있어요.');
     const finishing = story.status !== 'finished';
     if (!confirm(finishing ? '우리 소설을 완결할까요? 언제든 다시 이어 쓸 수 있어요.' : '다시 이어 쓰기를 시작할까요?')) return;
+    if (cred(story.id)) {
+      try {
+        await rpc('relay_sync_set_finished',{p_room_id:story.id,p_token:cred(story.id).token,p_finished:finishing});
+        await readCloud(true);
+        announce(finishing ? '이야기를 함께 완결했어요! 📖' : '다시 이어 쓸 수 있어요.');
+      } catch (err) { announce('변경 실패: ' + err.message); }
+      return;
+    }
     story.status = finishing ? 'finished' : 'writing';
     story.updatedAt = now();
     persist(); renderStory();

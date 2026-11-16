@@ -249,7 +249,6 @@
     $('sceneText').disabled = story.status === 'finished';
     $('publishScene').disabled = story.status === 'finished';
     $('completedMessage').classList.toggle('hidden', story.status !== 'finished');
-    $('editorToolbar');
     updateEditorMeta();
   }
   function updateEditorMeta() {

@@ -124,7 +124,7 @@
     if (isCreatingCloud) return;
     if (promptFirst && !confirm('이 소설을 두 휴대폰에서 함께 볼 수 있게 온라인 저장소에 올릴까요? 상대방에게 연결 링크를 한 번 보내면 자동 동기화돼요.')) return;
     if (story.scenes.length > 200) return announce('기존 장면이 200개를 넘어 자동 연결할 수 없어요. 먼저 JSON으로 백업해 주세요.');
-    if (!crypto || typeof crypto.getRandomValues !== 'function' || !crypto.subtle || typeof crypto.randomUUID !== 'function') {
+    if (typeof crypto === 'undefined' || typeof crypto.getRandomValues !== 'function' || !crypto.subtle || typeof crypto.randomUUID !== 'function') {
       return announce('안전한 HTTPS 브라우저에서 열어야 동기화할 수 있어요.');
     }
     isCreatingCloud = true;
@@ -517,8 +517,30 @@
     $('copyLinkBtn').textContent = shareMode === 'reminder' ? '🔗 메시지와 링크 복사' : '🔗 링크 복사하기';
     $('nativeShareBtn').disabled = true;
     $('copyLinkBtn').disabled = true;
-    $('shareTip').textContent = '원고를 정리하고 있어요…';
+    $('shareTip').textContent = '공유 링크를 준비하고 있어요…';
     openModal('shareModal');
+    const credentials=cred(story.id);
+    if (credentials) {
+      const base=location.href.split('#')[0].split('?')[0];
+      if (credentials.role===0 && credentials.partnerToken) {
+        shareUrl=base+'#join='+story.id+'.'+credentials.partnerToken;
+        $('shareDescription').textContent=shareMode==='reminder'
+          ? '친구에게 다음 차례를 알려주고 바로 이어 쓸 수 있는 연결 링크를 보내요.'
+          : '상대방에게 이 초대 링크를 딱 한 번 보내면 자동 동기화가 시작돼요.';
+        $('shareTip').textContent='이 초대 링크는 두 번째 작가의 접근 권한이에요. 상대에게만 보내 주세요. 처음 연결한 뒤에는 다시 보낼 필요 없어요.';
+      } else {
+        shareUrl=base;
+        $('shareDescription').textContent=shareMode==='reminder'
+          ? '상대에게 이어 쓸 차례를 알려줘요. 상대방은 평소 쓰던 릴레이소설 주소로 접속하면 돼요.'
+          : '원고는 이미 온라인에서 자동 동기화되고 있어요. 상대는 연결한 휴대폰에서 열면 돼요.';
+        $('shareTip').textContent='이미 두 사람이 연결된 소설이에요. 새 링크 없이도 상대가 사이트를 열면 최신 이야기가 보여요.';
+      }
+      $('nativeShareBtn').disabled=false;
+      $('copyLinkBtn').disabled=false;
+      $('nativeShareBtn').classList.remove('hidden');
+      $('copyLinkBtn').classList.remove('hidden');
+      return;
+    }
     try {
       const code = await packStory(story);
       if (currentId !== story.id || $('shareModal').classList.contains('hidden')) return;
@@ -571,6 +593,11 @@
   }
   async function importHash() {
     const hash = location.hash;
+    if (hash.startsWith('#join=')) {
+      history.replaceState(null, '', location.pathname + location.search);
+      await receiveCloudInvite(hash);
+      return true;
+    }
     if (!hash.startsWith('#relay=')) return false;
     history.replaceState(null, '', location.pathname + location.search);
     try {
@@ -592,6 +619,9 @@
       updateCount();
     });
     $('submitChapterBtn').addEventListener('click', submitChapter);
+    $('enableCloudBtn').addEventListener('click', () => enableCloud(true));
+    $('inviteBtn').addEventListener('click', () => openShare('invite'));
+    $('cloudRefreshBtn').addEventListener('click', () => readCloud(true));
     $('nudgeBtn').addEventListener('click', () => openShare('reminder'));
     $('identityBtn').addEventListener('click', chooseIdentity);
     $('toggleFinishedBtn').addEventListener('click', finishToggle);
@@ -616,6 +646,9 @@
       }
     });
     window.addEventListener('hashchange', importHash);
+    window.addEventListener('online', cloudCheck);
+    document.addEventListener('visibilitychange', cloudCheck);
+    if (typeof setInterval === 'function') setInterval(cloudCheck, 12000);
   }
   bind();
   const preferredId = localStorage.getItem(ACTIVE);

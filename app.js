@@ -1,562 +1,420 @@
 (() => {
   'use strict';
-
-  const STORAGE_KEY = 'relay_stories_v1';
-  const NAME_KEY = 'relay_penname_v1';
-  const DRAFT_PREFIX = 'relay_draft_';
-  const MIN_LENGTH = 20;
-  const MAX_IMPORT_BYTES = 3 * 1024 * 1024;
-  const MAX_SHARE_URL = 12000;
+  const STORAGE = 'relay_stories_v1';
+  const ME = 'relay_me_v2';
+  const ACTIVE = 'relay_active_story_v2';
+  const DRAFT = 'relay_draft_';
+  const MAX_CHAR = 1200;
+  const MAX_FILE = 3 * 1024 * 1024;
+  const MAX_LINK = 12000;
   const $ = (id) => document.getElementById(id);
-  const genreStyles = {
-    '판타지': { icon: '✦', color: '#ded9f7' },
-    '미스터리': { icon: '🔍', color: '#dae4e8' },
-    '로맨스': { icon: '♡', color: '#f5d8db' },
-    'SF': { icon: '◈', color: '#d7e8ef' },
-    '스릴러': { icon: '☾', color: '#e3dce4' },
-    '일상': { icon: '☕', color: '#f2e3cd' },
-    '호러': { icon: '🕯', color: '#dfd9d7' },
-    '자유': { icon: '✎', color: '#e3e4d3' }
-  };
-  const prompts = [
-    '평범해 보이던 물건에 숨겨진 비밀을 하나 남겨 보세요.',
-    '이번 장면의 마지막 문장을 질문으로 끝내 보세요.',
-    '등장인물이 사실을 숨기고 있다는 단서를 심어 보세요.',
-    '누군가 예상하지 못한 장소에서 나타나게 해 보세요.',
-    '이야기의 시간을 딱 10분 뒤로 보내 보세요.',
-    '앞 장면의 사소한 물건이 중요한 역할을 하게 해 보세요.',
-    '주인공이 두 가지 선택지 앞에 서게 해 보세요.',
-    '한 문장의 대사로 분위기를 뒤집어 보세요.',
-    '새로운 감각(소리, 냄새, 온기)으로 장면을 시작해 보세요.',
-    '다음 작가가 풀어야 할 작은 수수께끼를 남겨 보세요.',
-    '기대하던 일이 벌어졌지만 결과는 예상과 다르게 만들어 보세요.'
-  ];
+  const textSize = (s) => Array.from(s || '').length;
+  const short = (s, max) => Array.from(s || '').slice(0, max).join('');
+  const letters = (s) => Array.from(s || '')[0] || '?';
+  const now = () => new Date().toISOString();
+  const uid = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'relay_' + Date.now().toString(36) + Math.random().toString(36).slice(2));
+  let stories = load();
+  let currentId = null;
+  let shareUrl = '';
+  let toastTimeout;
 
-  let stories = readStories();
-  let activeId = null;
-  let toastTimer = null;
-  let currentShareLink = '';
-  let lastFocusedElement = null;
-
-  function uid() {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-    return 'relay_' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+  function element(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined) el.textContent = text;
+    return el;
   }
-
-  function count(text) { return Array.from(text || '').length; }
-  function short(text, max) { const chars = Array.from(text || ''); return chars.length > max ? chars.slice(0, max).join('') + '…' : (text || ''); }
-  function formatted(n) { return Number(n).toLocaleString('ko-KR'); }
-  function timeAgo(iso) {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '방금 전';
-    const days = Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
-    if (!days) return '오늘';
-    if (days === 1) return '어제';
-    return (d.getMonth() + 1) + '월 ' + d.getDate() + '일';
-  }
-  function nickname() { return (localStorage.getItem(NAME_KEY) || '').trim(); }
-  function activeStory() { return stories.find((s) => s.id === activeId) || null; }
-  function nextAuthor(story) {
-    if (!story.authors.length) return null;
-    return story.authors[story.scenes.length % story.authors.length];
-  }
-  function node(tag, cls, text) {
-    const n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text !== undefined && text !== null) n.textContent = text;
-    return n;
-  }
-  function toast(message) {
-    clearTimeout(toastTimer);
-    $('toast').textContent = message;
+  function announce(msg) {
+    clearTimeout(toastTimeout);
+    $('toast').textContent = msg;
     $('toast').classList.add('show');
-    toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3600);
+    toastTimeout = setTimeout(() => $('toast').classList.remove('show'), 3700);
   }
-  function safeDate(value) {
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  function dateSafe(s) {
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? now() : d.toISOString();
   }
-  function cleanStory(raw) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('올바른 작품 파일이 아니에요.');
-    if (typeof raw.title !== 'string' || !raw.title.trim() || !Array.isArray(raw.scenes)) throw new Error('제목 또는 장면 정보가 없어요.');
-    if (raw.scenes.length > 2000) throw new Error('장면 수가 너무 많아요.');
-    const seenAuthors = new Set();
-    const authors = (Array.isArray(raw.authors) ? raw.authors : [])
-      .filter((a) => typeof a === 'string')
-      .map((a) => a.trim().slice(0, 24))
-      .filter((a) => { if (!a || seenAuthors.has(a)) return false; seenAuthors.add(a); return true; })
-      .slice(0, 20);
-    const scenes = raw.scenes.map((s) => {
-      if (!s || typeof s.text !== 'string' || typeof s.author !== 'string' || count(s.text) > 1200) throw new Error('장면 데이터가 올바르지 않아요.');
-      const text = s.text.trim();
-      if (!text) throw new Error('빈 장면이 포함되어 있어요.');
-      return { id: (typeof s.id === 'string' && s.id.length < 100) ? s.id : uid(), text, author: s.author.trim().slice(0, 24) || '익명', createdAt: safeDate(s.createdAt) };
+  function normalize(input) {
+    if (!input || typeof input !== 'object' || typeof input.title !== 'string' || !input.title.trim() || !Array.isArray(input.scenes)) throw Error('올바른 작품 데이터가 아니에요.');
+    if (input.scenes.length > 2000) throw Error('장면이 너무 많아요.');
+    const scenes = input.scenes.map((raw) => {
+      if (!raw || typeof raw.text !== 'string' || !raw.text.trim() || textSize(raw.text) > MAX_CHAR) throw Error('장면 내용이 올바르지 않아요.');
+      return {
+        id: typeof raw.id === 'string' && raw.id.length <= 100 ? raw.id : uid(),
+        text: raw.text.trim(), author: short(String(raw.author || '익명').trim(), 24), createdAt: dateSafe(raw.createdAt)
+      };
     });
-    const rawId = typeof raw.id === 'string' ? raw.id : '';
+    const fromAuthors = Array.isArray(input.authors) ? input.authors : [];
+    const extracted = scenes.map((s) => s.author);
+    const authors = [...new Set([...fromAuthors, ...extracted].filter((v) => typeof v === 'string').map((v) => v.trim()).filter(Boolean))].slice(0, 2).map((v) => short(v, 24));
+    if (!authors.length) authors.push('첫 번째 작가');
+    if (authors.length === 1) authors.push(authors[0] === '두 번째 작가' ? '상대방' : '두 번째 작가');
+    const rawId = typeof input.id === 'string' ? input.id : '';
     return {
       id: /^[a-zA-Z0-9_-]{4,100}$/.test(rawId) ? rawId : uid(),
-      title: raw.title.trim().slice(0, 60),
-      premise: typeof raw.premise === 'string' ? raw.premise.trim().slice(0, 300) : '',
-      genre: Object.prototype.hasOwnProperty.call(genreStyles, raw.genre) ? raw.genre : '자유',
-      authors, limit: [500, 800, 1200].includes(Number(raw.limit)) ? Number(raw.limit) : 800,
-      scenes, status: raw.status === 'finished' ? 'finished' : 'writing',
-      createdAt: safeDate(raw.createdAt), updatedAt: safeDate(raw.updatedAt)
+      title: short(input.title.trim(), 60),
+      authors, scenes,
+      status: input.status === 'finished' ? 'finished' : 'writing',
+      createdAt: dateSafe(input.createdAt), updatedAt: dateSafe(input.updatedAt)
     };
   }
-  function readStories() {
+  function load() {
     try {
-      const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-      if (!Array.isArray(raw)) return [];
-      return raw.slice(0, 500).flatMap((s) => { try { return [cleanStory(s)]; } catch (_) { return []; } });
+      const data = JSON.parse(localStorage.getItem(STORAGE) || '[]');
+      return Array.isArray(data) ? data.slice(0, 300).flatMap((s) => { try { return [normalize(s)]; } catch (_) { return []; } }) : [];
     } catch (_) { return []; }
   }
-  function saveStories() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stories)); return true; }
-    catch (_) { toast('저장 공간이 부족해요. JSON 백업을 먼저 내려받아 주세요.'); return false; }
+  function persist() {
+    try { localStorage.setItem(STORAGE, JSON.stringify(stories)); return true; }
+    catch (_) { announce('저장 공간이 부족해요. 메뉴에서 백업 파일을 저장해 주세요.'); return false; }
   }
-
-  function updateNameUI() {
-    const name = nickname();
-    $('nameBadge').textContent = name || '작가 이름';
-    $('nameAvatar').textContent = Array.from(name || '나')[0];
+  function current() { return stories.find((s) => s.id === currentId) || null; }
+  function nextWriter(story) { return story.authors[story.scenes.length % 2]; }
+  function me() { return localStorage.getItem(ME) || ''; }
+  function putMe(name) { localStorage.setItem(ME, name); }
+  function reveal(view) {
+    ['welcomeView', 'storyView', 'libraryView'].forEach((id) => $(id).classList.toggle('hidden', id !== view));
+    window.scrollTo({ top: 0, behavior: 'instant' });
   }
-  function showModal(id) {
-    lastFocusedElement = document.activeElement;
+  function openModal(id) {
     $(id).classList.remove('hidden');
     document.body.style.overflow = 'hidden';
-    const first = $(id).querySelector('input:not([readonly]),textarea,button');
-    if (first) setTimeout(() => first.focus(), 50);
+    const close = $(id).querySelector('.dialog-close');
+    if (close) close.focus();
   }
   function closeModal(id) {
     $(id).classList.add('hidden');
-    if (!document.querySelector('.modal-backdrop:not(.hidden)')) document.body.style.overflow = '';
-    if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') lastFocusedElement.focus();
+    if (!document.querySelector('.overlay:not(.hidden)')) document.body.style.overflow = '';
   }
-  function showLibrary() {
-    activeId = null;
-    $('libraryView').classList.remove('hidden');
-    $('studioView').classList.add('hidden');
-    $('libraryNav').classList.add('active');
-    renderLibrary();
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  }
-  function showCreate() {
+  function welcome() {
+    currentId = null;
     $('createForm').reset();
-    const name = nickname();
-    if (name) $('createForm').elements.authors.placeholder = '예: ' + name + ', 친구, 다른 친구';
-    showModal('createModal');
+    $('createForm').elements.me.value = me();
+    $('openLibraryWelcome').classList.toggle('hidden', !stories.length);
+    reveal('welcomeView');
   }
-
-  function renderLibrary() {
-    $('statStories').textContent = formatted(stories.length);
-    $('statChapters').textContent = formatted(stories.reduce((a, s) => a + s.scenes.length, 0));
-    $('statCharacters').textContent = formatted(stories.reduce((a, s) => a + s.scenes.reduce((n, c) => n + count(c.text), 0), 0));
-    $('libraryCount').textContent = stories.length;
-    const q = $('storySearch').value.trim().toLowerCase();
-    const visible = stories.filter((s) => (s.title + ' ' + s.premise + ' ' + s.genre).toLowerCase().includes(q)).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-    const grid = $('storyGrid');
-    grid.replaceChildren();
-    for (const story of visible) grid.appendChild(makeCard(story));
-    if (visible.length && !q) {
-      const add = node('button', 'card-add');
-      add.type = 'button';
-      add.append(node('span', 'card-add-icon', '+'), node('strong', '', '새 이야기 쓰기'), node('small', '', '또 하나의 세계를 펼쳐 보세요'));
-      add.addEventListener('click', showCreate);
-      grid.appendChild(add);
-    }
-    const empty = !visible.length;
-    $('emptyState').classList.toggle('hidden', !empty);
-    $('emptyState').querySelector('h3').textContent = q ? '검색 결과가 없어요.' : '아직 첫 장이 비어 있어요.';
-    $('emptyState').querySelector('p').textContent = q ? '다른 제목이나 장르를 검색해 보세요.' : '작품을 만들고 친구에게 다음 장을 넘겨 보세요.\n어쩌면 생각하지 못한 결말을 만나게 될지도!';
-    $('emptyState').querySelector('.empty-buttons').classList.toggle('hidden', !!q);
-  }
-  function makeCard(story) {
-    const style = genreStyles[story.genre];
-    const card = node('button', 'story-card');
-    card.type = 'button';
-    card.setAttribute('aria-label', story.title + ' 집필실 열기');
-    card.style.textAlign = 'left';
-    card.style.padding = '0';
-    const art = node('div', 'card-art');
-    art.style.setProperty('--card-bg', style.color);
-    art.append(node('span', 'card-genre', story.genre), node('span', 'card-symbol', style.icon), node('span', 'card-chapter', 'CHAPTER ' + String(story.scenes.length).padStart(2, '0')));
-    const body = node('div', 'card-body');
-    body.append(node('h3', 'card-title', story.title), node('p', 'card-description', story.premise || '어떤 이야기가 펼쳐질까요? 다음 문장을 기다리고 있어요.'));
-    const foot = node('div', 'card-foot');
-    const next = story.status === 'finished' ? '✦ 완결' : (nextAuthor(story) ? '다음: ' + nextAuthor(story) : '누구나 이어 쓰기');
-    foot.append(node('span', 'card-next', next), node('span', 'card-arrow', '↗'));
-    body.append(foot); card.append(art, body);
-    card.addEventListener('click', () => openStory(story.id));
-    return card;
-  }
-
-  function openStory(id) {
-    const story = stories.find((s) => s.id === id);
-    if (!story) return toast('작품을 찾지 못했어요.');
-    activeId = id;
-    $('libraryView').classList.add('hidden');
-    $('studioView').classList.remove('hidden');
-    $('libraryNav').classList.remove('active');
-    $('sceneText').value = localStorage.getItem(DRAFT_PREFIX + story.id) || '';
-    $('writerInput').value = nickname();
-    renderStudio();
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  }
-  function renderStudio() {
-    const story = activeStory();
-    if (!story) return;
-    const next = nextAuthor(story);
-    $('crumbTitle').textContent = story.title;
-    $('studioTitle').textContent = story.title;
-    $('studioPremise').textContent = story.premise || '아직 정해지지 않은 이야기. 다음 문장이 세계를 만들어요.';
-    $('studioGenre').textContent = story.genre;
-    $('studioSceneCount').textContent = story.scenes.length + '개의 장면';
-    $('studioLastDate').textContent = '최근 기록 ' + timeAgo(story.updatedAt);
-    $('studioCover').textContent = genreStyles[story.genre].icon;
-    $('studioCover').style.background = genreStyles[story.genre].color;
-    $('storyStatus').textContent = story.status === 'finished' ? '완결' : '집필 중';
-    $('storyStatus').classList.toggle('finished', story.status === 'finished');
-    $('nextWriter').textContent = story.status === 'finished' ? '이야기 완결' : (next || '모든 작가에게 열린 차례');
-    $('turnNumber').textContent = String(story.scenes.length + 1).padStart(2, '0') + '번째 장면';
-    $('timelineTotal').textContent = story.scenes.length;
-    $('detailGenre').textContent = story.genre;
-    $('detailLimit').textContent = '최대 ' + formatted(story.limit) + '자';
-    $('detailMode').textContent = story.authors.length ? '순서대로 릴레이' : '자유 릴레이';
-    $('finishStory').textContent = story.status === 'finished' ? '◇ 집필 다시 시작하기' : '◇ 이야기 완결하기';
-    $('sceneText').maxLength = story.limit;
-    const last = story.scenes[story.scenes.length - 1];
-    $('contextText').textContent = last ? short(last.text, 400) : '첫 문장은 무엇이 될까요? 새로운 세계의 문을 열어 주세요.';
-    $('contextAuthor').textContent = last ? '— ' + last.author + ' · 장면 ' + story.scenes.length : '아직 작성된 장면이 없어요.';
-    const timeline = $('timelineList'); timeline.replaceChildren();
-    if (!story.scenes.length) timeline.append(node('p', 'timeline-blank', '여기서부터 이야기가 시작돼요. ✳'));
-    story.scenes.forEach((scene, index) => {
-      const btn = node('button', 'timeline-item' + (index === story.scenes.length - 1 ? ' active' : ''));
-      btn.type = 'button';
-      btn.append(node('span', 'timeline-number', String(index + 1).padStart(2, '0')));
-      const info = node('span', 'timeline-info');
-      info.append(node('strong', '', scene.author), node('p', '', short(scene.text.replace(/\s+/g, ' '), 35)), node('small', '', timeAgo(scene.createdAt)));
-      btn.append(info);
-      btn.addEventListener('click', () => showReader(index));
-      timeline.append(btn);
+  function library() {
+    currentId = null;
+    const cards = $('storyCards');
+    cards.replaceChildren();
+    const ordered = [...stories].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    ordered.forEach((story) => {
+      const button = element('button', 'library-card');
+      button.type = 'button';
+      button.append(element('span', 'library-icon', '📖'));
+      const info = element('div');
+      info.append(element('strong', '', story.title));
+      const count = story.scenes.length;
+      info.append(element('small', '', story.authors.join(' & ') + ' · ' + count + '개의 장면' + (story.status === 'finished' ? ' · 완결' : '')));
+      button.append(info, element('span', 'library-arrow', '→'));
+      button.addEventListener('click', () => openStory(story.id));
+      cards.append(button);
     });
-    const list = $('authorOrder'); list.replaceChildren();
-    if (!story.authors.length) list.append(node('span', 'author-chip next', '열린 릴레이 · 누구나'));
-    story.authors.forEach((name, i) => {
-      list.append(node('span', 'author-chip' + (name === next && story.status !== 'finished' ? ' next' : ''), String(i + 1) + '. ' + name));
-    });
-    $('sceneText').classList.toggle('hidden', story.status === 'finished');
-    $('writerInput').disabled = story.status === 'finished';
-    $('sceneText').disabled = story.status === 'finished';
-    $('publishScene').disabled = story.status === 'finished';
-    $('completedMessage').classList.toggle('hidden', story.status !== 'finished');
-    updateEditorMeta();
+    reveal('libraryView');
   }
-  function updateEditorMeta() {
-    const story = activeStory();
-    if (!story) return;
-    const value = count($('sceneText').value);
-    $('charCounter').replaceChildren(node('strong', '', formatted(value)), document.createTextNode(' / ' + formatted(story.limit) + '자'));
-    const invalid = value > story.limit;
-    $('charProgressBar').style.width = Math.min(100, value * 100 / story.limit) + '%';
-    $('charProgressBar').classList.toggle('over', invalid);
-    $('limitHint').textContent = invalid ? '글자 수를 줄여 주세요.' : (value < MIN_LENGTH ? '최소 ' + MIN_LENGTH + '자부터 등록할 수 있어요' : '좋아요! 이번 장면을 등록할 수 있어요.');
-    $('draftStatus').textContent = '● 자동 저장';
+  function home() {
+    if (currentId) library();
+    else if (stories.length) library();
+    else welcome();
   }
-
   function createStory(event) {
     event.preventDefault();
-    const form = event.currentTarget;
-    const title = String(form.elements.title.value || '').trim();
-    const premise = String(form.elements.premise.value || '').trim();
-    const genre = String(form.elements.genre.value || '자유');
-    const limit = Number(form.elements.limit.value) || 800;
-    const seen = new Set();
-    const authors = String(form.elements.authors.value || '').split(',').map((n) => n.trim()).filter((n) => {
-      if (!n || seen.has(n)) return false;
-      seen.add(n); return true;
-    });
-    if (!title) return toast('작품 제목을 적어 주세요.');
-    if (authors.length > 20 || authors.some((a) => count(a) > 24)) return toast('작가는 20명까지, 이름은 24자까지 가능해요.');
-    const now = new Date().toISOString();
-    const story = cleanStory({ id: uid(), title, premise, genre, limit, authors, scenes: [], status: 'writing', createdAt: now, updatedAt: now });
+    const form = $('createForm');
+    const title = form.elements.title.value.trim();
+    const authorA = form.elements.me.value.trim();
+    const authorB = form.elements.partner.value.trim();
+    if (!title || !authorA || !authorB) return announce('제목과 두 사람 이름을 모두 입력해 주세요.');
+    if (authorA === authorB) return announce('두 사람의 이름은 다르게 적어 주세요.');
+    const story = normalize({ id: uid(), title, authors: [authorA, authorB], scenes: [], status: 'writing', createdAt: now(), updatedAt: now() });
     stories.unshift(story);
-    if (!saveStories()) { stories.shift(); return; }
-    closeModal('createModal');
+    if (!persist()) { stories.shift(); return; }
+    putMe(authorA);
     openStory(story.id);
-    toast('새 소설이 만들어졌어요. 첫 장면을 써 보세요! ✳');
+    announce('우리 소설이 만들어졌어! 첫 번째 장면을 써 봐 ♡');
   }
-  function createDemo() {
-    const now = new Date().toISOString();
-    const demo = cleanStory({
-      id: uid(), title: '자정 이후의 도서관', genre: '미스터리', limit: 800, authors: [],
-      premise: '매일 자정, 도서관의 책들은 한 사람의 미래를 다시 쓴다.',
-      createdAt: now, updatedAt: now, status: 'writing',
-      scenes: [
-        { id: uid(), author: '초록잉크', createdAt: now, text: '도서관이 문을 닫은 지 한 시간이 지났다. 그런데 가장 안쪽 서가에서 책장을 넘기는 소리가 들렸다. 지우는 열쇠 꾸러미를 꽉 쥐고 그쪽으로 걸었다. 누군가 책 한 권을 펼쳐 둔 채 사라져 있었다. 그 책에는 아직 일어나지 않은 내일의 날짜가 적혀 있었다.' },
-        { id: uid(), author: '달빛', createdAt: now, text: '첫 페이지에는 자신의 이름이 쓰여 있었다. 지우는 다음 줄을 읽고 숨을 멈췄다. “오늘 자정, 이 문장을 읽은 사람은 선택해야 한다.” 책장 사이에서 작은 종소리가 울렸다. 지우가 고개를 돌렸을 때, 방금 전까지 비어 있던 의자에 누군가 앉아 있었다.' }
-      ]
+  function openStory(id) {
+    const story = stories.find((s) => s.id === id);
+    if (!story) return announce('작품을 찾지 못했어요.');
+    currentId = id;
+    try { localStorage.setItem(ACTIVE, id); } catch (_) { /* nonessential */ }
+    if (!story.authors.includes(me())) putMe(nextWriter(story));
+    $('chapterInput').value = localStorage.getItem(DRAFT + story.id) || '';
+    renderStory();
+    reveal('storyView');
+  }
+  function renderStory() {
+    const story = current(); if (!story) return;
+    const next = nextWriter(story);
+    const mine = me() === next;
+    const finished = story.status === 'finished';
+    $('storyTitle').textContent = story.title;
+    $('avatarA').textContent = letters(story.authors[0]);
+    $('avatarB').textContent = letters(story.authors[1]);
+    $('pairNames').textContent = story.authors.join('  &  ');
+    $('identityBtn').textContent = '이 기기 작가: ' + (me() || '선택하기') + ' · 바꾸기';
+    $('storyCount').textContent = story.scenes.length + '개의 장면이 이어졌어요';
+    $('storyStatus').textContent = finished ? '♡ 완결된 이야기' : '✦ 이어 쓰는 중';
+    $('storyStatus').classList.toggle('done', finished);
+    $('turnName').textContent = finished ? '완결된 이야기' : (mine ? next + ' (나)' : next + ' (상대)');
+    $('turnBadge').textContent = (story.scenes.length + 1) + '번째 차례';
+    const list = $('chapterList'); list.replaceChildren();
+    $('noChapters').classList.toggle('hidden', story.scenes.length > 0);
+    story.scenes.forEach((scene, index) => {
+      const card = element('article', 'chapter-card ' + (scene.author === me() ? 'mine' : 'theirs'));
+      const head = element('div', 'chapter-heading');
+      const author = element('div', 'chapter-author');
+      author.append(element('span', 'author-dot', letters(scene.author)), element('span', '', scene.author));
+      head.append(author, element('span', 'chapter-number', 'CHAPTER ' + String(index + 1).padStart(2, '0')));
+      card.append(head, element('p', 'chapter-text', scene.text));
+      list.append(card);
     });
-    stories.unshift(demo);
-    if (!saveStories()) { stories.shift(); return; }
-    openStory(demo.id);
-    toast('예시 작품을 열었어요. 다음 장면을 직접 이어 보세요!');
+    $('notMyTurn').classList.toggle('hidden', finished || mine);
+    $('chapterInput').classList.toggle('hidden', finished || !mine);
+    $('chapterInput').disabled = finished || !mine;
+    document.querySelector('.editor-footer').classList.toggle('hidden', finished || !mine);
+    $('finishedBox').classList.toggle('hidden', !finished);
+    $('submitChapterBtn').textContent = finished ? '완성된 이야기 공유하기 ↗' : (mine ? '글 저장하고 상대에게 보내기 →' : '상대에게 최신 이야기 보내기 ↗');
+    $('form-hint').textContent = finished
+      ? '우리 둘의 이야기를 저장하거나 링크로 남겨 보세요.'
+      : (mine ? '글을 저장한 뒤 공유 화면에서 상대에게 최신 원고를 보내 주세요.' : '상대가 새 장면을 쓰면, 받은 최신 링크를 열어 주세요.');
+    $('toggleFinishedBtn').textContent = finished ? '다시 이어 쓰기' : '소설 완결하기';
+    updateCount();
   }
-  function publishScene() {
-    const story = activeStory();
-    if (!story || story.status === 'finished') return toast('완결된 이야기에는 새 장면을 쓸 수 없어요.');
-    const author = $('writerInput').value.trim();
-    const text = $('sceneText').value.trim();
-    if (!author || count(author) > 24) return toast('작가 이름을 1~24자로 적어 주세요.');
-    if (story.authors.length && author !== nextAuthor(story)) return toast('이번 차례는 "' + nextAuthor(story) + '" 작가예요. 작가 이름을 확인해 주세요.');
-    if (count(text) < MIN_LENGTH) return toast('장면을 최소 ' + MIN_LENGTH + '자 이상 적어 주세요.');
-    if (count(text) > story.limit) return toast('이 작품은 한 장면에 최대 ' + story.limit + '자까지 쓸 수 있어요.');
-    const now = new Date().toISOString();
-    const scene = { id: uid(), author, text, createdAt: now };
-    story.scenes.push(scene);
-    const originalUpdatedAt = story.updatedAt;
-    story.updatedAt = now;
-    if (!saveStories()) { story.scenes.pop(); story.updatedAt = originalUpdatedAt; return; }
-    localStorage.setItem(NAME_KEY, author);
-    updateNameUI();
-    localStorage.removeItem(DRAFT_PREFIX + story.id);
-    $('sceneText').value = '';
-    renderStudio();
-    toast('장면이 등록됐어요! 이제 다음 작가에게 넘겨 주세요. ✦');
+  function updateCount() {
+    const n = textSize($('chapterInput').value);
+    $('counter').textContent = n.toLocaleString('ko-KR') + ' / ' + MAX_CHAR.toLocaleString('ko-KR') + '자';
+    $('saveIndicator').textContent = n ? '임시 저장됐어요 ✓' : '임시 저장돼요 ✓';
+  }
+  function submitChapter() {
+    const story = current(); if (!story) return;
+    if (story.status === 'finished' || nextWriter(story) !== me()) return openShare();
+    const content = $('chapterInput').value.trim();
+    if (!content) { $('chapterInput').focus(); return announce('한 문장만이라도 적어 볼까? ✍️'); }
+    if (textSize(content) > MAX_CHAR) return announce('1,200자까지만 쓸 수 있어요.');
+    const originalTime = story.updatedAt;
+    story.scenes.push({ id: uid(), author: me(), text: content, createdAt: now() });
+    story.updatedAt = now();
+    if (!persist()) { story.scenes.pop(); story.updatedAt = originalTime; return; }
+    localStorage.removeItem(DRAFT + story.id);
+    $('chapterInput').value = '';
+    renderStory();
+    announce('장면 저장 완료! 이제 다음 사람에게 넘겨 봐 💌');
     openShare();
   }
-
-  function showReader(startIndex) {
-    const story = activeStory();
-    if (!story) return;
-    $('readTitle').textContent = story.title;
-    $('readCount').textContent = story.scenes.length + '개의 장면 · ' + formatted(story.scenes.reduce((n, s) => n + count(s.text), 0)) + '자';
-    const body = $('readBody'); body.replaceChildren();
-    if (!story.scenes.length) {
-      body.append(node('p', 'read-empty', '첫 장면을 기다리고 있어요.'));
-    } else {
-      story.scenes.forEach((scene, i) => {
-        if (i) body.append(node('div', 'read-divider'));
-        const section = node('section', 'read-chapter');
-        section.id = 'readChapter_' + i;
-        section.append(node('span', '', 'CHAPTER ' + String(i + 1).padStart(2, '0')), node('p', '', scene.text), node('footer', '', '✎ ' + scene.author));
-        body.append(section);
-      });
-    }
-    showModal('readModal');
-    if (Number.isInteger(startIndex) && startIndex > 0) {
-      requestAnimationFrame(() => { const target = $('readChapter_' + startIndex); if (target) target.scrollIntoView({ block: 'start' }); });
-    } else body.scrollTop = 0;
+  function chooseIdentity() {
+    const story = current(); if (!story) return;
+    const other = story.authors.find((n) => n !== me()) || story.authors[0];
+    if (!confirm('이 기기를 사용하는 작가를 "' + other + '"(으)로 바꿀까요?')) return;
+    putMe(other);
+    renderStory();
+    announce('이 기기 작가를 ' + other + '(으)로 변경했어요.');
   }
-  function finishStory() {
-    const story = activeStory();
-    if (!story) return;
-    const finish = story.status !== 'finished';
-    if (finish && !story.scenes.length) return toast('한 장면 이상 쓴 뒤 완결할 수 있어요.');
-    if (!confirm(finish ? '이 작품을 완결할까요? 나중에 다시 집필을 시작할 수 있어요.' : '완결 상태를 해제하고 다시 집필을 시작할까요?')) return;
-    story.status = finish ? 'finished' : 'writing';
-    story.updatedAt = new Date().toISOString();
-    saveStories(); renderStudio(); toast(finish ? '이야기를 완결했어요. 축하해요! ✦' : '다시 다음 장면을 쓸 수 있어요.');
+  function finishToggle() {
+    const story = current(); if (!story) return;
+    if (story.status !== 'finished' && !story.scenes.length) return announce('장면을 하나 이상 쓴 후 완결할 수 있어요.');
+    const finishing = story.status !== 'finished';
+    if (!confirm(finishing ? '우리 소설을 완결할까요? 언제든 다시 이어 쓸 수 있어요.' : '다시 이어 쓰기를 시작할까요?')) return;
+    story.status = finishing ? 'finished' : 'writing';
+    story.updatedAt = now();
+    persist(); renderStory();
+    announce(finishing ? '완결 축하해! 우리 이야기가 완성됐어 ♡' : '다시 이어 쓸 수 있어요!');
   }
-  function deleteStory() {
-    const story = activeStory();
-    if (!story) return;
-    if (!confirm('"' + story.title + '" 작품을 이 기기에서 삭제할까요?\n삭제 전 JSON 백업을 권장합니다. 다른 사람이 받은 원고에는 영향을 주지 않아요.')) return;
-    stories = stories.filter((s) => s.id !== story.id);
-    localStorage.removeItem(DRAFT_PREFIX + story.id);
-    saveStories(); showLibrary(); toast('이 기기에서 작품을 삭제했어요.');
+  function filename(story, ext) {
+    return (story.title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim().slice(0, 45) || 'relay') + ext;
   }
-
-  function safeFilename(title, ext) { return (title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim().slice(0, 45) || 'relay-story') + ext; }
-  function downloadFile(filename, content, mime) {
-    const blob = new Blob([content], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = node('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  function download(name, value, mime) {
+    const url = URL.createObjectURL(new Blob([value], { type: mime }));
+    const a = element('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 12000);
   }
-  function backupOne() {
-    const story = activeStory(); if (!story) return;
-    downloadFile(safeFilename(story.title, '.json'), JSON.stringify({ app: 'relay', version: 1, story }, null, 2), 'application/json;charset=utf-8');
-    toast('JSON 백업을 저장했어요.');
+  function backup() {
+    const story = current(); if (!story) return;
+    download(filename(story, '.json'), JSON.stringify({ app: 'relay', version: 2, story }, null, 2), 'application/json;charset=utf-8');
+    announce('작품 백업 파일을 저장했어요.');
   }
-  function downloadMarkdown() {
-    const story = activeStory(); if (!story) return;
-    const lines = ['# ' + story.title, '', story.premise || '', '', '> 장르: ' + story.genre + ' · 장면 ' + story.scenes.length + '개', ''];
-    story.scenes.forEach((scene, i) => {
-      lines.push('## ' + String(i + 1).padStart(2, '0') + ' · ' + scene.author, '', scene.text, '');
-    });
-    downloadFile(safeFilename(story.title, '.md'), lines.join('\n'), 'text/markdown;charset=utf-8');
-    toast('전체 원고를 저장했어요.');
+  function exportMarkdown() {
+    const story = current(); if (!story) return;
+    const lines = ['# ' + story.title, '', story.authors.join(' & '), ''];
+    story.scenes.forEach((scene, i) => lines.push('## ' + (i + 1) + '번째 장면 · ' + scene.author, '', scene.text, ''));
+    download(filename(story, '.md'), lines.join('\n'), 'text/markdown;charset=utf-8');
+    announce('전체 원고를 저장했어요.');
   }
-  function importStory(story, source) {
-    const cleaned = cleanStory(story);
-    const i = stories.findIndex((s) => s.id === cleaned.id);
-    if (i !== -1) {
-      const local = stories[i];
-      if (local.scenes.length > cleaned.scenes.length) {
-        toast('이 기기에 더 많은 장면이 있어서 기존 작품을 보존했어요.');
-        openStory(local.id); return;
-      }
-      const same = JSON.stringify(local.scenes) === JSON.stringify(cleaned.scenes);
-      if (local.scenes.length === cleaned.scenes.length && !same) {
-        const copy = Object.assign({}, cleaned, { id: uid(), title: cleaned.title + ' (다른 버전)' });
-        stories.unshift(copy);
-        if (saveStories()) { openStory(copy.id); toast('내용이 달라 별도 버전으로 불러왔어요.'); }
+  function importStory(input, fromLink) {
+    const incoming = normalize(input);
+    const index = stories.findIndex((s) => s.id === incoming.id);
+    let target = incoming;
+    if (index >= 0) {
+      const local = stories[index];
+      if (local.scenes.length > incoming.scenes.length) {
+        openStory(local.id);
+        announce('이 기기에 더 최신 원고가 있어 기존 내용을 유지했어요.');
         return;
       }
-      stories[i] = cleaned;
-    } else stories.unshift(cleaned);
-    if (!saveStories()) return;
-    openStory(cleaned.id);
-    toast(source === 'link' ? '전달받은 이야기를 열었어요! 다음 장면을 이어 주세요.' : '백업 작품을 불러왔어요!');
+      const same = JSON.stringify(local.scenes) === JSON.stringify(incoming.scenes);
+      const prefixMatches = local.scenes.every((scene, i) => incoming.scenes[i]?.id === scene.id && incoming.scenes[i]?.text === scene.text);
+      if (!same && !prefixMatches) {
+        target = { ...incoming, id: uid(), title: incoming.title + ' (다른 버전)' };
+        stories.unshift(target);
+        announce('글이 서로 달라 다른 버전으로 보관했어요.');
+      } else {
+        stories[index] = incoming;
+      }
+    } else stories.unshift(incoming);
+    if (!persist()) return;
+    if (!target.authors.includes(me())) putMe(nextWriter(target));
+    openStory(target.id);
+    if (fromLink) announce('새 원고 도착! 이제 네 차례야 ♡');
+    else announce('백업한 이야기를 불러왔어요.');
   }
-  async function importBackupFile(file) {
+  async function importFile(file) {
     if (!file) return;
-    if (file.size > MAX_IMPORT_BYTES) return toast('파일이 너무 커요. 3MB 이하의 JSON 파일을 사용해 주세요.');
+    if (file.size > MAX_FILE) return announce('파일이 너무 커요. 3MB 이하만 가능해요.');
     try {
-      const data = JSON.parse(await file.text());
-      const entry = data && data.story ? data.story : data;
-      importStory(entry, 'file');
-    } catch (err) { toast('불러오기 실패: ' + (err.message || '파일을 확인해 주세요.')); }
+      const json = JSON.parse(await file.text());
+      importStory(json && json.story ? json.story : json, false);
+    } catch (err) { announce('백업을 읽을 수 없어요: ' + (err.message || '파일 오류')); }
     finally { $('importFile').value = ''; }
   }
-  function byteToBase64(bytes) {
-    let binary = '';
-    for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  function encodeB64(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
-  function base64ToBytes(encoded) {
-    const str = encoded.replace(/-/g, '+').replace(/_/g, '/');
-    const raw = atob(str.padEnd(Math.ceil(str.length / 4) * 4, '='));
-    return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+  function decodeB64(encoded) {
+    const plain = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(plain.padEnd(Math.ceil(plain.length / 4) * 4, '='));
+    return Uint8Array.from(raw, (v) => v.charCodeAt(0));
   }
-  async function encodeSnapshot(story) {
-    const jsonBytes = new TextEncoder().encode(JSON.stringify(story));
+  async function packStory(story) {
+    const data = new TextEncoder().encode(JSON.stringify(story));
     if (typeof CompressionStream !== 'undefined') {
       try {
-        const compressed = new Blob([jsonBytes]).stream().pipeThrough(new CompressionStream('gzip'));
-        const result = new Uint8Array(await new Response(compressed).arrayBuffer());
-        return 'g' + byteToBase64(result);
-      } catch (_) { /* fallback to plain JSON */ }
+        const stream = new Blob([data]).stream().pipeThrough(new CompressionStream('gzip'));
+        return 'g' + encodeB64(new Uint8Array(await new Response(stream).arrayBuffer()));
+      } catch (_) { /* older browsers */ }
     }
-    return 'j' + byteToBase64(jsonBytes);
+    return 'j' + encodeB64(data);
   }
-  async function decodeSnapshot(encoded) {
-    if (typeof encoded !== 'string' || encoded.length > 200000) throw new Error('링크 크기가 올바르지 않아요.');
-    const bytes = base64ToBytes(encoded.slice(1));
-    let output = bytes;
+  async function unpackStory(encoded) {
+    if (!encoded || encoded.length > 200000) throw Error('주소에 포함된 데이터가 너무 길어요.');
+    const data = decodeB64(encoded.slice(1));
+    let bytes = data;
     if (encoded[0] === 'g') {
-      if (typeof DecompressionStream === 'undefined') throw new Error('이 브라우저는 압축 원고 링크를 지원하지 않아요. JSON 파일로 받아 주세요.');
-      const decompressed = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-      output = new Uint8Array(await new Response(decompressed).arrayBuffer());
-    } else if (encoded[0] !== 'j') throw new Error('원고 링크 형식을 알 수 없어요.');
-    if (output.length > MAX_IMPORT_BYTES) throw new Error('링크의 작품 데이터가 너무 커요.');
-    return JSON.parse(new TextDecoder().decode(output));
+      if (typeof DecompressionStream === 'undefined') throw Error('압축 링크를 지원하지 않는 브라우저예요. JSON 파일로 받아 주세요.');
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'));
+      bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    } else if (encoded[0] !== 'j') throw Error('원고 주소가 올바르지 않아요.');
+    if (bytes.length > MAX_FILE) throw Error('원고 크기가 너무 커요.');
+    return JSON.parse(new TextDecoder().decode(bytes));
   }
   async function openShare() {
-    const story = activeStory(); if (!story) return;
-    $('shareNextWriter').textContent = story.status === 'finished' ? '완결된 작품' : (nextAuthor(story) || '다음 이야기를 쓸 누구나');
-    $('shareLinkInput').value = '원고 링크 생성 중...';
-    $('shareLinkBox').classList.remove('hidden');
-    $('shareLinkHelp').textContent = '받는 사람이 링크를 열면 현재까지의 원고가 그 기기에 복사됩니다.';
-    showModal('shareModal');
+    const story = current(); if (!story) return;
+    shareUrl = '';
+    $('recipientName').textContent = story.status === 'finished' ? '우리 둘이 읽을' : nextWriter(story);
+    $('nativeShareBtn').disabled = true;
+    $('copyLinkBtn').disabled = true;
+    $('shareTip').textContent = '원고를 정리하고 있어요…';
+    openModal('shareModal');
     try {
-      const snapshot = await encodeSnapshot(story);
-      if (activeId !== story.id || $('shareModal').classList.contains('hidden')) return;
-      const base = location.href.split('#')[0].split('?')[0];
-      const link = base + '#relay=' + snapshot;
-      if (link.length > MAX_SHARE_URL) {
-        currentShareLink = '';
-        $('shareLinkBox').classList.add('hidden');
-        $('shareLinkHelp').textContent = '원고가 길어져 링크로 전달하기 어려워요. 아래 JSON 파일을 내려받아 다음 사람에게 보내 주세요.';
-      } else { currentShareLink = link; $('shareLinkInput').value = link; }
+      const code = await packStory(story);
+      if (currentId !== story.id || $('shareModal').classList.contains('hidden')) return;
+      const link = location.href.split('#')[0].split('?')[0] + '#relay=' + code;
+      if (link.length > MAX_LINK) {
+        $('shareTip').textContent = '이야기가 길어져 링크로 보내기 어려워요. 아래 "파일로 보내기"를 눌러 JSON을 전달해 주세요.';
+        $('nativeShareBtn').classList.add('hidden');
+        $('copyLinkBtn').classList.add('hidden');
+      } else {
+        shareUrl = link;
+        $('nativeShareBtn').disabled = false;
+        $('copyLinkBtn').disabled = false;
+        $('nativeShareBtn').classList.remove('hidden');
+        $('copyLinkBtn').classList.remove('hidden');
+        $('shareTip').textContent = '매 차례마다 새 링크를 보내 주세요. 같은 링크를 재사용하면 최신 내용으로 자동 갱신되지 않아요.';
+      }
     } catch (_) {
-      currentShareLink = '';
-      $('shareLinkBox').classList.add('hidden');
-      $('shareLinkHelp').textContent = '링크를 만들 수 없어요. 아래 JSON 백업을 사용해 주세요.';
+      $('nativeShareBtn').classList.add('hidden');
+      $('copyLinkBtn').classList.add('hidden');
+      $('shareTip').textContent = '공유 링크를 만들지 못했어요. 아래 파일로 보내기를 이용해 주세요.';
     }
   }
-  async function copyShare() {
-    if (!currentShareLink) return toast('복사할 링크가 없어요. JSON 파일을 이용해 주세요.');
+  async function copyLink() {
+    if (!shareUrl) return announce('링크를 먼저 만들어 주세요.');
     try {
-      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(currentShareLink);
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(shareUrl);
       else {
-        $('shareLinkInput').select();
-        if (!document.execCommand('copy')) throw new Error('copy rejected');
+        const input = element('textarea');
+        input.value = shareUrl; input.style.position = 'fixed'; input.style.opacity = '0';
+        document.body.append(input); input.select();
+        const ok = document.execCommand('copy'); input.remove();
+        if (!ok) throw Error('not copied');
       }
-      toast('원고 전달 링크를 복사했어요! ✦');
-      $('copyShareLink').textContent = '복사됨 ✓';
-      setTimeout(() => $('copyShareLink').textContent = '링크 복사', 2000);
-    } catch (_) { $('shareLinkInput').select(); toast('링크를 선택했어요. 직접 복사해 주세요.'); }
+      announce('링크를 복사했어요! 상대에게 붙여넣으면 돼요 💌');
+    } catch (_) { announce('자동 복사가 안 돼요. 크롬에서 다시 시도해 주세요.'); }
   }
-  async function importFromHash() {
+  async function shareNative() {
+    if (!shareUrl) return announce('공유할 링크가 없어요.');
+    const story = current();
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: story?.title || '우리의 릴레이 소설', text: '이번엔 네 차례야! ♡', url: shareUrl });
+        announce('공유 화면에서 원하는 앱을 선택해 보내 주세요.');
+      } catch (err) {
+        if (err.name !== 'AbortError') announce('공유할 수 없어요. 링크 복사 버튼을 이용해 주세요.');
+      }
+    } else await copyLink();
+  }
+  async function importHash() {
     const hash = location.hash;
-    if (!hash.startsWith('#relay=')) return;
+    if (!hash.startsWith('#relay=')) return false;
     history.replaceState(null, '', location.pathname + location.search);
     try {
-      const raw = await decodeSnapshot(hash.slice('#relay='.length));
-      importStory(raw, 'link');
-    } catch (err) { toast('전달 링크를 열 수 없어요: ' + (err.message || '파일을 확인해 주세요.')); }
+      const incoming = await unpackStory(hash.slice(7));
+      importStory(incoming, true);
+    } catch (err) { announce('링크를 열 수 없어요: ' + (err.message || '잘못된 원고')); }
+    return true;
   }
-
   function bind() {
-    ['topCreate', 'heroCreate', 'emptyCreate'].forEach((id) => $(id).addEventListener('click', showCreate));
-    ['guideNav', 'heroGuide'].forEach((id) => $(id).addEventListener('click', () => showModal('guideModal')));
-    ['homeButton', 'libraryNav', 'backToLibrary'].forEach((id) => $(id).addEventListener('click', showLibrary));
-    $('guideStart').addEventListener('click', () => { closeModal('guideModal'); showCreate(); });
-    $('nameButton').addEventListener('click', () => { $('nicknameInput').value = nickname(); showModal('nameModal'); });
-    $('nameForm').addEventListener('submit', (event) => {
-      event.preventDefault();
-      const name = $('nicknameInput').value.trim();
-      if (!name) return toast('작가 이름을 적어 주세요.');
-      localStorage.setItem(NAME_KEY, name);
-      updateNameUI();
-      if (activeId) $('writerInput').value = name;
-      closeModal('nameModal'); toast('작가 이름을 설정했어요.');
-    });
     $('createForm').addEventListener('submit', createStory);
-    $('demoCreate').addEventListener('click', createDemo);
-    $('storySearch').addEventListener('input', renderLibrary);
-    $('importTop').addEventListener('click', () => $('importFile').click());
-    $('importFile').addEventListener('change', (event) => importBackupFile(event.target.files[0]));
-    $('sceneText').addEventListener('input', () => {
-      const story = activeStory();
-      if (!story) return;
-      try { localStorage.setItem(DRAFT_PREFIX + story.id, $('sceneText').value); }
-      catch (_) { toast('임시 저장 공간이 부족해요.'); }
-      updateEditorMeta();
+    $('homeBtn').addEventListener('click', home);
+    $('switchStoryBtn').addEventListener('click', library);
+    $('openLibraryWelcome').addEventListener('click', library);
+    $('newStoryBtn').addEventListener('click', welcome);
+    $('chapterInput').addEventListener('input', () => {
+      const story = current(); if (!story) return;
+      try { localStorage.setItem(DRAFT + story.id, $('chapterInput').value); }
+      catch (_) { announce('임시 저장 공간이 부족해요.'); }
+      updateCount();
     });
-    $('writerInput').addEventListener('change', () => {
-      const newName = $('writerInput').value.trim();
-      if (newName) { localStorage.setItem(NAME_KEY, newName); updateNameUI(); }
-    });
-    $('publishScene').addEventListener('click', publishScene);
-    $('newPrompt').addEventListener('click', () => {
-      const old = $('promptText').textContent;
-      const choices = prompts.filter((p) => p !== old);
-      $('promptText').textContent = choices[Math.floor(Math.random() * choices.length)];
-    });
-    $('readButton').addEventListener('click', () => showReader());
-    $('readAllButton').addEventListener('click', () => showReader());
-    $('shareButton').addEventListener('click', openShare);
-    $('copyShareLink').addEventListener('click', copyShare);
-    $('shareDownloadJson').addEventListener('click', backupOne);
-    $('downloadText').addEventListener('click', downloadMarkdown);
-    $('backupStory').addEventListener('click', backupOne);
-    $('finishStory').addEventListener('click', finishStory);
-    $('deleteStory').addEventListener('click', deleteStory);
-    document.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeModal(button.dataset.close)));
-    document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeModal(backdrop.id); }));
+    $('submitChapterBtn').addEventListener('click', submitChapter);
+    $('identityBtn').addEventListener('click', chooseIdentity);
+    $('toggleFinishedBtn').addEventListener('click', finishToggle);
+    $('downloadBtn').addEventListener('click', exportMarkdown);
+    $('exportJsonBtn').addEventListener('click', backup);
+    $('menuBtn').addEventListener('click', () => openModal('menuModal'));
+    $('menuLibrary').addEventListener('click', () => { closeModal('menuModal'); library(); });
+    $('menuNew').addEventListener('click', () => { closeModal('menuModal'); welcome(); });
+    $('menuImport').addEventListener('click', () => { closeModal('menuModal'); $('importFile').click(); });
+    $('menuGuide').addEventListener('click', () => { closeModal('menuModal'); openModal('guideModal'); });
+    $('importBtn').addEventListener('click', () => $('importFile').click());
+    $('importFile').addEventListener('change', (event) => importFile(event.target.files?.[0]));
+    $('nativeShareBtn').addEventListener('click', shareNative);
+    $('copyLinkBtn').addEventListener('click', copyLink);
+    $('downloadShareBtn').addEventListener('click', backup);
+    document.querySelectorAll('[data-close]').forEach((btn) => btn.addEventListener('click', () => closeModal(btn.dataset.close)));
+    document.querySelectorAll('.overlay').forEach((overlay) => overlay.addEventListener('click', (event) => { if (event.target === overlay) closeModal(overlay.id); }));
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
-        const open = document.querySelector('.modal-backdrop:not(.hidden)');
-        if (open) closeModal(open.id);
+        const modal = document.querySelector('.overlay:not(.hidden)');
+        if (modal) closeModal(modal.id);
       }
     });
-    window.addEventListener('hashchange', importFromHash);
+    window.addEventListener('hashchange', importHash);
   }
-
   bind();
-  updateNameUI();
-  renderLibrary();
-  importFromHash();
+  const preferredId = localStorage.getItem(ACTIVE);
+  if (preferredId && stories.some((s) => s.id === preferredId)) openStory(preferredId);
+  else if (stories.length) library();
+  else welcome();
+  importHash();
 })();

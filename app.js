@@ -204,21 +204,65 @@
   }
   async function receiveCloudInvite(hash) {
     const match=hash.match(/^#join=([0-9a-f-]{36})\.([a-f0-9]{64})$/i);
-    if (!match) { announce('초대 링크 형식이 올바르지 않아요.');return; }
+    if (!match) { announce('초대 링크 형식이 올바르지 않아요.');return false; }
+    if (joiningCloud) return false;
+    joiningCloud=true;
     const id=match[1], token=match[2];
     try {
+      // If the inviter clicks their own link, do not silently turn them into
+      // the second author or overwrite their secret creator token.
+      if (cred(id)) {
+        openStory(id);
+        announce('이 휴대폰은 이미 이 작품에 연결돼 있어요. ☁');
+        return true;
+      }
       const data=await rpc('relay_sync_read',{p_room_id:id,p_token:token});
-      if (!data) throw Error('초대 링크가 유효하지 않아요.');
+      if (!data) throw Error('초대 링크가 유효하지 않아요. 첫 번째 작가에게 새로운 초대를 부탁해 주세요.');
       const incoming=normalize(data);
       const found=stories.findIndex((s)=>s.id===id);
-      if (found>=0) stories[found]=incoming; else stories.unshift(incoming);
+      if (found>=0) {
+        const old=stories[found];
+        // Preserve a pre-existing unsynced local copy before replacing it
+        // with the real online novel. Never throw away the user's writing.
+        if (old.scenes.length && JSON.stringify(old.scenes)!==JSON.stringify(incoming.scenes)) {
+          const backupId=uid();
+          const draft=localStorage.getItem(DRAFT+old.id);
+          stories.push({...old,id:backupId,title:short(old.title+' (연결 전 원본)',60)});
+          if (draft) localStorage.setItem(DRAFT+backupId,draft);
+        }
+        stories[found]=incoming;
+      } else stories.unshift(incoming);
       cloudKeys[id]={token,role:1};
-      if (!saveCloudKeys() || !persist()) return;
+      if (!saveCloudKeys() || !persist()) throw Error('연결 정보를 휴대폰에 저장할 수 없어요.');
+      syncHealth[id]='online';
       putMe(incoming.authors[1]);
       openStory(id);
-      updateCloudStatus('☁ 자동 동기화 연결됨','online');
-      announce('두 휴대폰 연결 완료! 이제 새 글이 자동으로 보여요. 💜');
-    } catch (err) { announce('연결 실패: ' + err.message); }
+      updateCloudStatus('☁ 서버 동기화 정상','online');
+      announce('연결 성공! 이제 두 휴대폰에서 같은 소설을 봐요. 💜');
+      return true;
+    } catch (err) {
+      announce('연결 실패: '+err.message);
+      return false;
+    } finally { joiningCloud=false; }
+  }
+  function openJoinDialog() {
+    $('joinUrlInput').value='';
+    openModal('joinModal');
+  }
+  async function submitJoinDialog() {
+    const raw=$('joinUrlInput').value.trim();
+    const match=raw.match(/#join=([0-9a-f-]{36})\.([a-f0-9]{64})/i);
+    if (!match) return announce('상대가 보낸 초대 링크를 전부 붙여넣어 주세요. (#join= 포함)');
+    const button=$('joinSubmitBtn');
+    button.disabled=true;
+    button.textContent='☁ 연결 확인 중…';
+    try {
+      const ok=await receiveCloudInvite('#join='+match[1]+'.'+match[2]);
+      if (ok) closeModal('joinModal');
+    } finally {
+      button.disabled=false;
+      button.textContent='두 휴대폰 연결하기 →';
+    }
   }
   function cloudCheck() {
     if (typeof document.hidden === 'boolean' && document.hidden) return;
@@ -606,9 +650,11 @@
   async function importHash() {
     const hash = location.hash;
     if (hash.startsWith('#join=')) {
-      history.replaceState(null, '', location.pathname + location.search);
-      await receiveCloudInvite(hash);
-      return true;
+      // Do not erase the invitation until the server confirms the join.
+      // Network errors must leave the invite URL available for retry.
+      const ok=await receiveCloudInvite(hash);
+      if (ok) history.replaceState(null, '', location.pathname + location.search);
+      return ok;
     }
     if (!hash.startsWith('#relay=')) return false;
     history.replaceState(null, '', location.pathname + location.search);
@@ -624,6 +670,11 @@
     $('switchStoryBtn').addEventListener('click', library);
     $('openLibraryWelcome').addEventListener('click', library);
     $('newStoryBtn').addEventListener('click', welcome);
+    $('joinFromWelcomeBtn').addEventListener('click',openJoinDialog);
+    $('joinFromLibraryBtn').addEventListener('click',openJoinDialog);
+    $('joinFromStoryBtn').addEventListener('click',openJoinDialog);
+    $('joinSubmitBtn').addEventListener('click',submitJoinDialog);
+    $('joinUrlInput').addEventListener('keydown',(event)=>{if (event.key==='Enter') submitJoinDialog();});
     $('chapterInput').addEventListener('input', () => {
       const story = current(); if (!story) return;
       try { localStorage.setItem(DRAFT + story.id, $('chapterInput').value); }
@@ -642,6 +693,7 @@
     $('menuBtn').addEventListener('click', () => openModal('menuModal'));
     $('menuLibrary').addEventListener('click', () => { closeModal('menuModal'); library(); });
     $('menuNew').addEventListener('click', () => { closeModal('menuModal'); welcome(); });
+    $('menuJoin').addEventListener('click', () => { closeModal('menuModal'); openJoinDialog(); });
     $('menuImport').addEventListener('click', () => { closeModal('menuModal'); $('importFile').click(); });
     $('menuGuide').addEventListener('click', () => { closeModal('menuModal'); openModal('guideModal'); });
     $('importBtn').addEventListener('click', () => $('importFile').click());

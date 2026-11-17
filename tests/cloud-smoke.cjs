@@ -42,8 +42,8 @@ async function rpcMock(url, req) {
   return json({message:'UNKNOWN_RPC'},404);
 }
 
-function phone(initialHash='') {
-  const store = new Map(), nodes=new Map(), windowEvents={};
+function phone(initialHash='', seeded={}) {
+  const store = new Map(Object.entries(seeded)), nodes=new Map(), windowEvents={};
   let copied='';
   class El {
     constructor(id='') {
@@ -65,7 +65,7 @@ function phone(initialHash='') {
   const get=(id)=>{if(!nodes.has(id))nodes.set(id,new El(id));return nodes.get(id);};
   const form=get('createForm');form.elements={title:{value:''},me:{value:''},partner:{value:''}};
   form.reset=()=>{Object.values(form.elements).forEach(o=>o.value='');};
-  const overlays=['shareModal','menuModal','guideModal'].map(get);
+  const overlays=['shareModal','menuModal','guideModal','joinModal'].map(get);
   const loc={href:'https://example.org/relay/'+initialHash,hash:initialHash,pathname:'/relay/',search:''};
   const doc={
     body:new El('body'),hidden:false,
@@ -105,6 +105,12 @@ async function main() {
   await settle();
   const invite=a.copied;
   assert.ok(invite.includes('#join='),'one-time invitation available');
+  // A creator must not accidentally lose their writing role by opening their own invite.
+  a.get('joinFromStoryBtn').fire('click');
+  a.get('joinUrlInput').value=invite;
+  a.get('joinSubmitBtn').fire('click');
+  await settle();
+  assert.equal(JSON.parse(a.store.get('relay_cloud_keys_v1'))[roomId].role,0,'creator keeps own writer role');
   const b=phone(new URL(invite).hash);
   await settle();
   assert.equal(b.stories()[0].id,roomId,'second phone joined same room');
@@ -129,6 +135,35 @@ async function main() {
   assert.equal(a.stories()[0].scenes.length,2,'returning phone receives partner text');
   assert.equal(a.get('chapterInput').disabled,false,'turn comes back to first writer');
   assert.equal(a.get('nudgeBtn').classList.contains('hidden'),true,'no nudge on own turn');
+
+  // Regression: two phones may have received the SAME offline story UUID.
+  // A new cloud room must never reuse this UUID, or cloud creation returns 409.
+  const offlineId='e4fb7e83-4f1a-4f16-92f2-c68d32200011';
+  const legacy={
+    id:offlineId,title:'옛 원고',authors:['첫째','둘째'],
+    scenes:[{id:'old-scene',author:'첫째',text:'기존 장면을 보존한다.',createdAt:new Date().toISOString()}],
+    status:'writing',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()
+  };
+  const seed={relay_stories_v1:JSON.stringify([legacy]),relay_active_story_v2:offlineId,relay_me_v2:'첫째'};
+  const author=phone('',seed), recipient=phone('',seed);
+  author.get('enableCloudBtn').fire('click');
+  await settle();
+  const migrated=author.stories().find(s=>s.title==='옛 원고');
+  assert.ok(migrated && migrated.id!==offlineId,'migrated story has a FRESH cloud UUID');
+  assert.ok(rooms.has(migrated.id),'new cloud room exists without old-id collision');
+  author.get('inviteBtn').fire('click');
+  await settle();
+  author.get('copyLinkBtn').fire('click');
+  await settle();
+  recipient.get('joinFromStoryBtn').fire('click');
+  recipient.get('joinUrlInput').value=author.copied;
+  recipient.get('joinSubmitBtn').fire('click');
+  await settle();
+  assert.equal(recipient.stories().some(s=>s.id===migrated.id),true,'second phone joins creator room via pasted link');
+  assert.equal(recipient.get('roomCode').textContent,author.get('roomCode').textContent,'both phones display identical room code');
+  assert.equal(recipient.stories().find(s=>s.id===migrated.id).scenes.length,1,'migrated original chapter is present on both');
+  assert.equal(recipient.stories().find(s=>s.id===offlineId).scenes.length,1,'previous local copy stays intact');
+
   console.log('PASS cloud: create → invite → second phone joins → remote chapters sync → alternating turns');
 }
 main().catch(err=>{console.error(err);process.exitCode=1;});

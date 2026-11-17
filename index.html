@@ -12,15 +12,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=20261117-sync2">
-  <script src="./app.js?v=20261117-sync2" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=20261117-sync3">
+  <script src="./app.js?v=20261117-sync3" defer></script>
 </head>
 <body>
   <div class="app">
     <header class="header">
       <button class="logo" id="homeBtn" type="button" aria-label="첫 화면">릴레이소설<span class="logo-star">✳</span></button>
       <div class="header-right">
-        <span class="header-desc">☁ 자동 동기화 V2</span>
+        <span class="header-desc">☁ 함께 쓰기 V3</span>
         <button class="icon-btn" id="menuBtn" type="button" aria-label="메뉴 열기" aria-haspopup="dialog"><span>☰</span></button>
       </div>
     </header>
@@ -47,6 +47,10 @@
           <button class="primary-btn wide" type="submit">우리 이야기 만들기 <span>→</span></button>
           <p class="tiny-note">회원가입 없이 시작할 수 있어요.</p>
         </form>
+        <div class="join-entry">
+          <p class="join-help">상대가 이미 소설을 만들었나요? <strong>새 소설을 만들지 마세요.</strong></p>
+          <button id="joinFromWelcomeBtn" class="join-primary" type="button">💌 상대 초대 링크로 참여하기 →</button>
+        </div>
         <button id="openLibraryWelcome" class="light-link hidden" type="button">전에 쓰던 이야기 열기 →</button>
         <div class="welcome-bottom"><span>① 첫 문장 쓰기</span><span>→</span><span>② 상대에게 보내기</span><span>→</span><span>③ 이어 쓰기</span></div>
       </section>
@@ -69,7 +73,9 @@
           <p id="storyCount" class="scene-count">0개의 장면</p>
           <div class="cloud-tools"><span id="cloudStatus" class="cloud-status">이 기기에 저장됨</span><button id="cloudRefreshBtn" class="cloud-refresh hidden" type="button">↻ 새 글 확인</button></div>
           <button id="enableCloudBtn" class="primary-btn cloud-enable" type="button">☁ 두 사람 자동 동기화 켜기</button>
-          <button id="inviteBtn" class="secondary-btn invite-btn hidden" type="button">💌 상대 휴대폰 연결 링크 보내기</button>
+          <button id="inviteBtn" class="secondary-btn invite-btn hidden" type="button">💌 상대에게 초대 링크 보내기</button>
+          <p id="roomCode" class="room-code hidden">연결 코드</p>
+          <button id="joinFromStoryBtn" class="light-link join-existing" type="button">상대가 만든 이야기로 연결하기 →</button>
         </div>
 
         <div class="story-step"><div><span class="step-index">01</span><span>지금까지의 이야기</span></div><button class="text-link" id="downloadBtn" type="button">원고 저장 ↓</button></div>
@@ -101,6 +107,7 @@
         <p>전에 쓰던 이야기를 선택하거나 새 소설을 시작해요.</p>
         <div id="storyCards" class="library-cards"></div>
         <button id="newStoryBtn" class="primary-btn wide" type="button">+ 새로운 두 사람의 이야기</button>
+        <button id="joinFromLibraryBtn" class="join-primary join-library" type="button">💌 상대 초대 링크로 참여하기</button>
         <button id="importBtn" class="light-link" type="button">받은 백업 파일 불러오기 →</button>
       </section>
     </main>
@@ -122,11 +129,26 @@
     </section>
   </div>
 
+  <div id="joinModal" class="overlay hidden" role="presentation">
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="joinTitle">
+      <button class="dialog-close" data-close="joinModal" type="button" aria-label="닫기">×</button>
+      <div class="dialog-icon">💌</div>
+      <h2 id="joinTitle">상대방 소설에 참여하기</h2>
+      <p>상대방에게 받은 <strong>초대 링크</strong>를 아래에 붙여넣어 주세요. 직접 링크를 누르는 것도 가능해요.</p>
+      <label class="field join-field" for="joinUrlInput"><span>초대 링크</span>
+        <input id="joinUrlInput" type="url" autocomplete="off" placeholder="https://…/relay/#join=…">
+      </label>
+      <button id="joinSubmitBtn" class="primary-btn wide" type="button">두 휴대폰 연결하기 →</button>
+      <p class="join-hint">둘 다 각자 새 소설을 만들면 동기화되지 않아요. 한 사람만 방을 만들고, 나머지 한 사람은 여기에 참여해야 해요.</p>
+    </section>
+  </div>
+
   <div id="menuModal" class="overlay hidden" role="presentation">
     <section class="dialog menu-dialog" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
       <button class="dialog-close" data-close="menuModal" aria-label="닫기" type="button">×</button>
       <h2 id="menuTitle">메뉴</h2>
       <button id="menuLibrary" class="menu-row" type="button">📚 다른 소설 열기 <span>→</span></button>
+      <button id="menuJoin" class="menu-row" type="button">💌 상대 초대 링크로 참여하기 <span>→</span></button>
       <button id="menuNew" class="menu-row" type="button">✎ 새 소설 만들기 <span>→</span></button>
       <button id="menuImport" class="menu-row" type="button">📂 백업 파일 불러오기 <span>→</span></button>
       <button id="menuGuide" class="menu-row" type="button">❔ 사용 방법 보기 <span>→</span></button>
@@ -139,7 +161,7 @@
       <div class="dialog-icon">📖</div><h2 id="guideTitle">둘이 쓰는 방법</h2>
       <div class="guide-row"><span>1</span><p>두 사람의 이름과 소설 제목을 정해요.</p></div>
       <div class="guide-row"><span>2</span><p><strong>자동 동기화</strong>를 켜고 상대에게 연결 링크를 보낸 뒤, 내 차례에 이야기를 저장해요.</p></div>
-      <div class="guide-row"><span>3</span><p>상대는 <strong>처음 받은 초대 링크</strong>로 연결해요. 이후에는 상대가 저장한 글이 내 화면에 자동 반영돼요.</p></div>
+      <div class="guide-row"><span>3</span><p>두 번째 사람은 <strong>새 소설을 만들지 말고</strong> 첫 사람의 초대 링크로 참여해요. 이후에는 새 글을 자동으로 불러와요.</p></div>
       <p class="caution">자동 동기화를 켜고 상대에게 초대 링크를 한 번 보내면 그 뒤에는 새 글이 자동으로 불러와져요. 인터넷 연결이 필요하며, 알림이 휴대폰 밖으로 푸시되지는 않아요. 기존 작품도 자동 동기화 버튼으로 연결할 수 있어요.</p>
       <button type="button" class="primary-btn wide" data-close="guideModal">알겠어요! ♡</button>
     </section>

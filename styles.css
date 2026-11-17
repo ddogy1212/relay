@@ -24,3 +24,17 @@
 .story-hero .invite-btn{display:flex;align-items:center;justify-content:center}
 .story-hero .cloud-enable{display:flex;align-items:center;justify-content:center}
 @media(max-width:500px){.cloud-tools{gap:6px}.cloud-status,.cloud-refresh{font-size:10px}.cloud-enable,.invite-btn{width:100%;max-width:360px}}
+
+/* Clear two-device pairing flow (v3) */
+.join-entry{max-width:520px;margin:20px auto 0;padding:17px;border-radius:16px;background:#f1ecfa;border:1px solid #e6dcf7;text-align:center}
+.join-help{color:#7c7092;font-size:12px;line-height:1.8;margin:0 0 10px}
+.join-help strong{color:#7053b3}
+.join-primary{width:100%;padding:14px 16px;background:#fff;border:1px solid #d7c7ee;color:#7554ba;border-radius:12px;font-size:13px;font-weight:800;box-shadow:0 4px 12px #7d6a9e15}
+.join-primary:hover{background:#faf7ff}
+.join-library{margin-top:6px}
+.join-existing{margin:8px auto 0;padding:5px 10px;font-size:11px}
+.room-code{margin:10px 0 0;font-size:11px;color:#8973b7;font-weight:700;background:#f4f0fc;border-radius:100px;display:inline-block;padding:6px 13px}
+.join-field{margin:20px 0 16px}
+.join-field input{background:#fbf8ff;font-size:12px}
+.join-hint{font-size:11px;color:#a48ba3;margin:15px 0 0!important;line-height:1.85}
+@media(max-width:500px){.join-entry{padding:14px}.join-primary{font-size:12px}}

@@ -11,6 +11,8 @@
   let cloudKeys = loadCloudKeys();
   let isCreatingCloud = false;
   let isReadingCloud = false;
+  const syncHealth = {};
+  let joiningCloud = false;
   const MAX_CHAR = 1200;
   const MAX_FILE = 3 * 1024 * 1024;
   const MAX_LINK = 12000;
@@ -129,7 +131,10 @@
     }
     isCreatingCloud = true;
     const oldId = story.id;
-    const remoteId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(oldId) ? oldId : crypto.randomUUID();
+    // IMPORTANT: Never reuse a local novel's UUID for a new cloud room.
+    // Two phones may have the same offline snapshot ID; reusing it causes
+    // POST /relay_sync_create -> 409 and makes joining impossible.
+    const remoteId = crypto.randomUUID();
     const a = newSecret(), b = newSecret();
     const button=$('enableCloudBtn');button.disabled = true;button.textContent = '☁ 동기화 연결 중…';
     updateCloudStatus('서버 연결 중…');
@@ -148,7 +153,7 @@
         currentId=remoteId;
       }
       cloudKeys[remoteId] = { token:a, partnerToken:b, role:0 };
-      saveCloudKeys();
+      if (!saveCloudKeys()) throw Error('접근 권한을 휴대폰에 저장하지 못했어요. 사이트 저장 공간을 확인해 주세요.');
       putMe(story.authors[0]);
       persist();
       await readCloud(false);
@@ -188,10 +193,12 @@
           if (added && old.scenes.length && !manual) announce('새 장면이 도착했어! 📖💌');
           else if (added && manual) announce('새로운 글을 불러왔어요.');
         }
-        updateCloudStatus('☁ 자동 동기화 연결됨','online');
+        syncHealth[beforeId]='online';
+        updateCloudStatus('☁ 서버 동기화 정상','online');
       }
     } catch (err) {
-      if (currentId === beforeId) updateCloudStatus('연결 안 됨 · 새 글 확인 필요','offline');
+      syncHealth[beforeId]='offline';
+      if (currentId === beforeId) updateCloudStatus('⚠ 서버 연결 오류 · 새 글 확인 필요','offline');
       if (manual) announce('동기화 오류: ' + err.message);
     } finally { isReadingCloud = false; }
   }
@@ -306,10 +313,15 @@
     $('identityBtn').textContent = '이 기기 작가: ' + (me() || '선택하기') + ' · 바꾸기';
     $('storyCount').textContent = story.scenes.length + '개의 장면이 이어졌어요';
     const online = Boolean(cred(story.id));
+    $('roomCode').classList.toggle('hidden', !online);
+    $('roomCode').textContent = online ? '🔗 둘이 똑같아야 하는 방 코드: ' + story.id.slice(0,8).toUpperCase() : '';
     $('enableCloudBtn').classList.toggle('hidden', online);
     $('inviteBtn').classList.toggle('hidden', !online || cred(story.id).role !== 0 || !cred(story.id).partnerToken);
     $('cloudRefreshBtn').classList.toggle('hidden', !online);
-    updateCloudStatus(online ? '☁ 자동 동기화 연결됨' : '이 휴대폰에만 저장됨 · 동기화를 켜 주세요', online ? 'online' : '');
+    if (!online) updateCloudStatus('이 휴대폰에만 저장됨 · 동기화를 켜 주세요');
+    else if (syncHealth[story.id] === 'online') updateCloudStatus('☁ 서버 동기화 정상','online');
+    else if (syncHealth[story.id] === 'offline') updateCloudStatus('⚠ 서버 연결 오류 · 새 글 확인 버튼을 눌러 주세요','offline');
+    else updateCloudStatus('☁ 서버 연결 확인 중…');
     $('submitChapterBtn').disabled = isCreatingCloud;
     $('storyStatus').textContent = finished ? '♡ 완결된 이야기' : '✦ 이어 쓰는 중';
     $('storyStatus').classList.toggle('done', finished);
